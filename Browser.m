@@ -32,7 +32,7 @@ classdef Browser < handle
         devTools_;
         maxFreeBrowsers_(1,1) uint8 = 2;
 
-        url_(1,:) char = web.Browser.BLANK_URL;
+        url_(1,:) char = Browser.BLANK_URL;
         favicon_ = [];
         favIconMap_
         title_(1,:) char  = '';
@@ -718,7 +718,7 @@ classdef Browser < handle
         end
 
         function clients = getClients()
-            clients = web.Browser.getFieldValueByName(org.cef.CefApp.getInstance(),'clients_');
+            clients = Browser.getFieldValueByName(org.cef.CefApp.getInstance(),'clients_');
         end
 
         function setDebugPort( port )
