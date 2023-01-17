@@ -538,20 +538,37 @@ classdef Browser < handle
         end
 
         function onImageDownload( this, src, evnt )
-
-            s = split(evnt,',');
-            strData = s{2};
-            data = java.util.Base64.getDecoder.decode(strData);
-            bais = java.io.ByteArrayInputStream(data);
-            bi = javax.imageio.ImageIO.read(bais);
-            w = bi.getWidth();
-            h = bi.getHeight;
-            pixelsData = reshape(typecast(bi.getData.getDataStorage, 'uint8'), 3, w, h);
-            I = cat(3, ...
+            
+            URL = evnt;
+            if contains(URL,'webp'); return;end
+            
+            showImage = true;
+            
+            if startswith(URL,'data')
+                
+                s = split(URL,',');
+                strData = s{2};
+                data = java.util.Base64.getDecoder.decode(strData);
+                bais = java.io.ByteArrayInputStream(data);
+                bi = javax.imageio.ImageIO.read(bais);
+                w = bi.getWidth();
+                h = bi.getHeight;
+                pixelsData = reshape(typecast(bi.getData.getDataStorage, 'uint8'), 3, w, h);
+                I = cat(3, ...
                     transpose(reshape(pixelsData(3, :, :), w, h)), ...
                     transpose(reshape(pixelsData(2, :, :), w, h)), ...
                     transpose(reshape(pixelsData(1, :, :), w, h)));  
-            imtool(I);
+            else
+                try
+                    I = imread(URL)
+                catch
+                    showImage = false;
+                end                    
+            end
+            
+            if showImage
+                imtool(I);
+            end
         end
 
         function onGetSource( this, ~, pageSource )
