@@ -2,7 +2,7 @@ function b = tabtest
 
     URL = 'google.com';
 
-    b = web.Browser();
+    b = Browser();
     b.RetriveFavicon = true;
     b.EnableContextMenu = true;
     b.EnableAddressPane = true;
