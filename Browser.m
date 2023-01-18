@@ -560,7 +560,7 @@ classdef Browser < handle
                     transpose(reshape(pixelsData(1, :, :), w, h)));  
             else
                 try
-                    I = imread(URL)
+                    I = imread(URL);
                 catch
                     showImage = false;
                 end                    
