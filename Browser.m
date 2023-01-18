@@ -539,14 +539,14 @@ classdef Browser < handle
 
         function onImageDownload( this, src, evnt )
             
-            URL = evnt;
-            if contains(URL,'webp'); return;end
+            url = evnt;
+            if contains(url,'webp'); return;end
             
             showImage = true;
             
-            if startswith(URL,'data')
+            if startsWith(url,'data')
                 
-                s = split(URL,',');
+                s = split(url,',');
                 strData = s{2};
                 data = java.util.Base64.getDecoder.decode(strData);
                 bais = java.io.ByteArrayInputStream(data);
@@ -560,7 +560,7 @@ classdef Browser < handle
                     transpose(reshape(pixelsData(1, :, :), w, h)));  
             else
                 try
-                    I = imread(URL);
+                    I = imread(url);
                 catch
                     showImage = false;
                 end                    
