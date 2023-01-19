@@ -1,4 +1,6 @@
-function b = tabtest
+function b = tabtest( dodebug )
+    
+if ~nargin; dodebug = false; end
 
     URL = 'google.com';
 
@@ -6,6 +8,7 @@ function b = tabtest
     b.RetriveFavicon = true;
     b.EnableContextMenu = true;
     b.EnableAddressPane = true;
+    b.DisplayDebugMessages = dodebug;
     b.setMaxFreeBrowsers(15);
     
     addlistener(b,'IconChanged',@(s,e) onIconChange(s,e));

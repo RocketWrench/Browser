@@ -10,6 +10,7 @@ classdef Browser < handle
         CanGoForward
         ErrorCode
         StatusMessage
+        DisplayDebugMessages
     end
 
     properties(Access = public, Dependent = true)
@@ -53,6 +54,7 @@ classdef Browser < handle
         retrieveFavicon_(1,1) logical = false;
         isContextMenuEnabled_(1,1) logical = false
         enableAddressPane_(1,1) logical = false;
+        debug_(1,1) logical = false;
     end
 
     properties(Access = protected, Constant = true)
@@ -69,7 +71,7 @@ classdef Browser < handle
         AddressChanged
         TitleChanged
         IconChanged
-        IsLoadingUpdated
+        LoadingStateUpdated
         CanGoBackUpdated
         CanGoForwardUpdated
         StatusMessageUpdated
@@ -364,7 +366,15 @@ classdef Browser < handle
             if ~(this.enableAddressPane_ & val) %#ok<AND2> 
                 this.enableAddressPane_ = val;
             end
-        end       
+        end 
+
+        function val = get.DisplayDebugMessages( this )
+            val = this.debug_;
+        end
+
+        function set.DisplayDebugMessages( this, val )
+            this.debug_ = logical(val);
+        end
     end
 
     methods(Access = protected)
@@ -405,7 +415,7 @@ classdef Browser < handle
 %         end        
 
         function removeClient( this )
-
+            % TODO: rethink this
             clients = this.getClients();
             try clients.remove(this.client); catch; end
         end
@@ -497,7 +507,7 @@ classdef Browser < handle
                     
                 case web.EventType.LOADING_STATE_CHANGE.getCode
                     this.isLoading_ = evnt.IsLoading;
-                    if this.isLoading_; notify(this,'IsLoadingUpdated'); end
+                    notify(this,'LoadingStateUpdated');
                     if evnt.CanGoBack ~= this.canGoBack_
                         this.canGoBack_ = evnt.CanGoBack;
                         notify(this,'CanGoBackUpdated')
@@ -520,8 +530,7 @@ classdef Browser < handle
                             this.favicon_ = this.GENERIC_ICON;
                         end
                         notify(this,'IconChanged');
-                    end
-                    
+                    end                    
                 case web.EventType.LOAD_END.getCode
                    
                 case web.EventType.BEFORE_POPUP.getCode
@@ -534,11 +543,14 @@ classdef Browser < handle
                 case web.util.ON_DIALOG.getCode
                     
             end
-            %fprintf([type.toString.char,': ',char(evnt.StatusMessage),'\n'])
+
+            if this.debug_
+                this.printDebugMessage(browser,evnt);
+            end
         end
 
         function onImageDownload( this, src, evnt )
-            
+
             url = evnt;
             if contains(url,'webp'); return;end
             
@@ -580,6 +592,8 @@ classdef Browser < handle
             import com.jidesoft.swing.JideBoxLayout 
             import javax.swing.BorderFactory
 
+
+            iconpath = [fullfile(fileparts(mfilename('fullpath')),'icons'),filesep];
             border = BorderFactory.createLineBorder(java.awt.Color.WHITE,4,true);
 
             cls = 'javax.swing.JPanel';
@@ -593,27 +607,31 @@ classdef Browser < handle
             addressPane.setBorder(com.jidesoft.swing.PartialLineBorder(java.awt.Color(0.9,0.9,0.9,0.6),2,com.jidesoft.swing.PartialSide.SOUTH));
             addressPane.setPreferredSize(java.awt.Dimension(200,36));
         
-            icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('arrow_move_left_lg.gif');
+            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('arrow_move_left_lg.gif');
+            icon = javax.swing.ImageIcon([iconpath,'left.png']);
             backButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
             backButton.setEnabled(false);
             backButton.setFocusable(false);
             backButton.setBorder(border);
             backButton.ActionPerformedCallback = @(~,~) browser.goBack;
         
-            icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('arrow_move_right_lg.gif');
+            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('arrow_move_right_lg.gif');
+            icon = javax.swing.ImageIcon([iconpath,'right.png']);
             forwardButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
             forwardButton.setEnabled(false);
             forwardButton.setFocusable(false);
             forwardButton.setBorder(border);
             forwardButton.ActionPerformedCallback = @(~,~) browser.goForward;
         
-            icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('refresh.gif');
+            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('refresh.gif');
+            icon = javax.swing.ImageIcon([iconpath,'refresh.png']);
             reloadButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
             reloadButton.setFocusable(false);
             reloadButton.setBorder(border);
             reloadButton.ActionPerformedCallback = @(~,~) browser.reloadIgnoreCache;
         
-            icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('home.gif');
+            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('home.gif');
+            icon = javax.swing.ImageIcon([iconpath,'home.png']);
             homeButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
             homeButton.setFocusable(false);
             homeButton.setBorder(border);
@@ -768,6 +786,26 @@ classdef Browser < handle
             end
             msg = [msg,'</body></html>'];
 
+        end
+
+        function printDebugMessage( browser, evnt )
+            
+            typecode = evnt.Type.getCode;
+            msg = ['Browser(', int2str(browser.getIdentifier), '): ',...
+                evnt.Type.toString.char, ' %s\n'];
+            if isequal(typecode,web.EventType.STATUS_MESSAGE.getCode)
+                msg = sprintf(msg,char(evnt.StatusMessage));
+            elseif isequal(typecode,web.EventType.CONSOLE_MESSAGE.getCode)
+                msg = sprintf(msg,char(evnt.ConsoleMessage));
+            elseif isequal(typecode,web.EventType.LOADING_STATE_CHANGE.getCode)  
+                state = ['(',upper(java.lang.Boolean(evnt.IsLoading).toString.char),', ',...
+                             upper(java.lang.Boolean(evnt.CanGoBack).toString.char),', ',...
+                             upper(java.lang.Boolean(evnt.CanGoForward).toString.char),')'];
+                msg = sprintf(msg,state);
+            else
+                msg = sprintf(msg,' ');
+            end
+            fprintf(msg)
         end
     end
 
