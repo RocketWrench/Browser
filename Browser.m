@@ -26,7 +26,7 @@ classdef Browser < handle
         client;
         clientListeners;
 
-        browsers_;
+        browsers_ = java.util.HashMap;
         freeBrowserIDs(:,1) int32;
         focusedBrowserID_;
         focusedBrowser_;
@@ -132,6 +132,7 @@ classdef Browser < handle
 
             this.url_ = this.parseURL(URL);
             browser = this.getNewBrowser();
+            browser.setCloseAllowed();
 
             if this.enableAddressPane_
                 browserPanel = this.installAddressPane(browser);
@@ -382,10 +383,9 @@ classdef Browser < handle
         function configureClient( this )
 
             if isempty(this.client)
-                %this.setDebugPort(2012);
                 this.client = this.getClient();                
             end
-            this.setupClientListeners();
+            this.installClientListeners();
         end
         
         function browser = getNewBrowser( this )
@@ -423,7 +423,7 @@ classdef Browser < handle
 
     methods(Access = protected)
 
-        function setupClientListeners( this )
+        function installClientListeners( this )
 
             displayHandler = web.DisplayHandler();
             this.client.addDisplayHandler(displayHandler);
@@ -450,7 +450,7 @@ classdef Browser < handle
                 addlistener(lifeSpanHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(jsDialogHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(downloadHandler.getCallback,'delayed',@this.onImageDownload);...
-                addlistener(contextMenuHandler.getCallback,'delayed',@this.onGetSource)];           
+                addlistener(contextMenuHandler.getViewSourceCallback,'delayed',@this.onGetSource)];           
         end
 
         function setContextMenuHandler( this )
@@ -467,9 +467,9 @@ classdef Browser < handle
                 browser = src.getClientProperty('CEFBrowser');
                 browser.close(true);
                 
-                if ~src.isValid
-                    try this.freeBrowserIDs(end+1) = int32(str2double(src.getName.char)); catch; end
-                end
+%                 if ~src.isValid
+%                     try this.freeBrowserIDs(end+1) = int32(str2double(src.getName.char)); catch; end
+%                 end
             end
 
         end
@@ -478,10 +478,9 @@ classdef Browser < handle
 
             if ~this.hasFirstBrowserBeenCreated_; return; end
 
-            type = evnt.Type;
             browser = evnt.Browser;
 
-            switch type.getCode
+            switch evnt.Type.getCode
                 case web.EventType.LOAD_ERROR.getCode
                     errorCode = evnt.ErrorCode;
                     this.errorCode_ = this.formateErrorCode(errorCode); 
@@ -491,11 +490,15 @@ classdef Browser < handle
                         browser.stopLoad();
                     end                    
                 case web.EventType.ADDRESS_CHANGE.getCode
-                    this.url_ = char(evnt.URL);
-                    notify(this,'AddressChanged')
+                    if ~strcmp(this.url_,char(evnt.URL))
+                        this.url_ = char(evnt.URL);
+                        notify(this,'AddressChanged');
+                    end
                 case web.EventType.TITLE_CHANGE.getCode
-                    this.title_ = char(evnt.Title);
-                    notify(this,'TitleChanged')
+                    if ~strcmp(this.title_,char(evnt.Title))
+                        this.title_ = char(evnt.Title);
+                        notify(this,'TitleChanged');
+                    end
                 case web.EventType.STATUS_MESSAGE.getCode
                     this.statusMessage_ = char(evnt.StatusMessage);
                     notify(this,'StatusMessageUpdated');
@@ -523,14 +526,9 @@ classdef Browser < handle
                         this.errorMsg_ = '';
                     end                    
                 case web.EventType.LOAD_START.getCode
-                    if this.retrieveFavicon_
-                        try
-                            this.favicon_ = this.fetchFavicon(this.favIconMap_,this.getDomain(browser.getURL));                            
-                        catch
-                            this.favicon_ = this.GENERIC_ICON;
-                        end
-                        notify(this,'IconChanged');
-                    end                    
+                    this.favicon_ = this.fetchFavicon(this.favIconMap_,...
+                        this.getDomain(browser.getURL),this.GENERIC_ICON);  
+                    notify(this,'IconChanged');                    
                 case web.EventType.LOAD_END.getCode
                    
                 case web.EventType.BEFORE_POPUP.getCode
@@ -698,24 +696,31 @@ classdef Browser < handle
         function domain = getDomain( URL )
             
             domain = [];
-            if isa(URL,'com.mathworks.html.Url')
-                URL = java.net.URL(URL.toString);
-            else
-                URL = com.mathworks.html.Url.parseSilently(URL);
-                if isempty(URL); return; end
-                URL = java.net.URL(URL.toString);
-            end
+            
+            if contains(URL.toString.char,'data'); return; end
 
-            domain = URL.getHost; 
+            try
+                if isa(URL,'com.mathworks.html.Url')
+                    URL = java.net.URL(URL.toString);
+                else
+                    URL = com.mathworks.html.Url.parseSilently(URL);
+                    if isempty(URL); return; end
+                    URL = java.net.URL(URL.toString);
+                end
+    
+                domain = URL.getHost; 
+            catch
+            end
         end
 
-        function  icon = fetchFavicon( map, domain )
-
+        function  icon = fetchFavicon( map, domain, generic )
+            
+            icon = generic;
+            if isempty(domain); return; end
             if map.containsKey(domain)
 
                 icon = map.get(domain);
-            else
-                
+            else                
                 strQuery = java.lang.StringBuilder('https://www.google.com/s2/favicons?domain=');
                 strQuery.append(domain);
                 strQuery.append('&sz=16');

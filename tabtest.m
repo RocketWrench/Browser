@@ -1,6 +1,6 @@
 function b = tabtest( dodebug )
     
-if ~nargin; dodebug = false; end
+    if ~nargin; dodebug = false; end
 
     URL = 'google.com';
 
@@ -15,32 +15,36 @@ if ~nargin; dodebug = false; end
     addlistener(b,'TitleChanged',@(s,e) onTitleChange(s,e));
 
     tabPane = creatabbedPane();
-    
-    %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('new_ts_16.png');
+
     addTabBut = handle(javaObjectEDT('javax.swing.JButton','Add Tab'),'CallbackProperties');
-    %addTabBut.setBorder(javax.swing.BorderFactory.createEmptyBorder);
     addTabBut.ActionPerformedCallback = @(s,e) addNewTab(s,e);
 
     tabPane.setTabTrailingComponent(addTabBut);
-    tabPane.addTab('',javax.swing.JPanel); 
+
+    idx = addDummyTab();
 
     f = figure();
     b.createJavaWrapperPanel(f,tabPane,[0,0,1,1]); 
     drawnow()
     
-    tabPane.setComponentAt(0,b.install(URL))
-    tabPane.setTitleAt(0,b.Title);
-    tabPane.setIconAt(0,b.Favicon);
+    populateTab(idx);
+
+    function index = addDummyTab()
+        tabPane.addTab('',javax.swing.JPanel); 
+        index = tabPane.getTabCount - 1;
+    end
+
+    function populateTab( index )
+        tabPane.setComponentAt(index,b.install(URL))
+        tabPane.setTitleAt(index,b.Title);
+        tabPane.setIconAt(index,b.Favicon);
+    end
  
 
     function addNewTab( src, evnt )
-
-        tabPane.addTab('',javax.swing.JPanel); 
-        index = tabPane.getTabCount - 1;
-        tabPane.setComponentAt(index,b.install(URL))
-        tabPane.setTitleAt(index,b.Title);
-        tabPane.setIconAt(index,b.Favicon);        
-        tabPane.setSelectedIndex(index);
+        idx = addDummyTab();
+        populateTab(idx);
+        tabPane.setSelectedIndex(idx);
     end
 
     function onIconChange( src, evnt )
