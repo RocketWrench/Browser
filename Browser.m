@@ -132,7 +132,7 @@ classdef Browser < handle
 
             this.url_ = this.parseURL(URL);
             browser = this.getNewBrowser();
-            browser.setCloseAllowed();
+            %browser.setCloseAllowed();
 
             if this.enableAddressPane_
                 browserPanel = this.installAddressPane(browser);
@@ -390,29 +390,27 @@ classdef Browser < handle
         
         function browser = getNewBrowser( this )
 
-            osr = this.useOSR_ | this.overrideOSR_;
-            browser = this.getBrowser(this.client,this.url_,osr,this.isTransparent_);
-%             browser = this.getFree();
-%             if isempty(browser)
-%                 osr = this.useOSR_ | this.overrideOSR_;
-%                 browser = this.getBrowser(this.client,this.url_,osr,this.isTransparent_);
-%                 if ~this.hasFirstBrowserBeenCreated_
-%                     this.browsers_ = this.getFieldValueByName(this.client,'browser_');
-%                 end
-%             else
-%                 this.loadURL(this.url_,browser);
-%             end    
+            browser = this.getFree();
+            if isempty(browser)
+                osr = this.useOSR_ | this.overrideOSR_;
+                browser = this.getBrowser(this.client,this.url_,osr,this.isTransparent_);
+                if ~this.hasFirstBrowserBeenCreated_
+                    this.browsers_ = this.getFieldValueByName(this.client,'browser_');
+                end
+            else
+                this.loadURL(this.url_,browser);
+            end    
             browser.createImmediately();
         end
 
-%         function browser = getFree( this )
-% 
-%             browser = [];
-%             if ~isempty(this.freeBrowserIDs)
-%                 browser = this.browsers_.get(this.freeBrowserIDs(1));
-%                 this.freeBrowserIDs(1) = [];
-%             end
-%         end        
+        function browser = getFree( this )
+
+            browser = [];
+            if ~isempty(this.freeBrowserIDs)
+                browser = this.browsers_.get(this.freeBrowserIDs(1));
+                this.freeBrowserIDs(1) = [];
+            end
+        end        
 
         function removeClient( this )
             % TODO: rethink this
@@ -467,9 +465,9 @@ classdef Browser < handle
                 browser = src.getClientProperty('CEFBrowser');
                 browser.close(true);
                 
-%                 if ~src.isValid
-%                     try this.freeBrowserIDs(end+1) = int32(str2double(src.getName.char)); catch; end
-%                 end
+                if ~src.isValid
+                    try this.freeBrowserIDs(end+1) = int32(str2double(src.getName.char)); catch; end
+                end
             end
 
         end
@@ -482,13 +480,15 @@ classdef Browser < handle
 
             switch evnt.Type.getCode
                 case web.EventType.LOAD_ERROR.getCode
-                    errorCode = evnt.ErrorCode;
-                    this.errorCode_ = this.formateErrorCode(errorCode); 
-                    if ~isequal(errorCode,web.ErrorCode.ERR_NONE.getCode) &&...
-                            ~isequal(errorCode,web.ErrorCode.ERR_ABORTED.getCode)                        
-                        this.errorMsg_ = this.createErrorMessage(errorCode,evnt.ErrorText,evnt.URL);
-                        browser.stopLoad();
-                    end                    
+                    if evnt.Frame.isMainFrame()
+                        errorCode = evnt.ErrorCode;
+                        this.errorCode_ = errorCode.toString.char;
+                        if errorCode ~= web.ErrorCode.ERR_NONE &&...
+                           errorCode ~= web.ErrorCode.ERR_ABORTED                        
+                            this.errorMsg_ = this.createErrorMessage(errorCode,evnt.ErrorText,evnt.URL);
+                            browser.stopLoad();
+                        end  
+                    end
                 case web.EventType.ADDRESS_CHANGE.getCode
                     if ~strcmp(this.url_,char(evnt.URL))
                         this.url_ = char(evnt.URL);
@@ -510,32 +510,42 @@ classdef Browser < handle
                     
                 case web.EventType.LOADING_STATE_CHANGE.getCode
                     this.isLoading_ = evnt.IsLoading;
-                    notify(this,'LoadingStateUpdated');
-                    if evnt.CanGoBack ~= this.canGoBack_
-                        this.canGoBack_ = evnt.CanGoBack;
-                        notify(this,'CanGoBackUpdated')
-                    end
-                    if evnt.CanGoForward ~= this.canGoForward_
-                        this.canGoForward_ = evnt.CanGoForward;
-                        notify(this,'CanGoForwardUpdated')
-                    end                    
+                    notify(this,'LoadingStateUpdated');                   
                     if ~this.isLoading_ && ~isempty(this.errorMsg_)
                         dataURI = this.createDataURI('text/html',this.errorMsg_);
                         browser.loadURL(dataURI);
                         this.removeFromHistory(browser,dataURI);
                         this.errorMsg_ = '';
-                    end                    
+                        return
+                    end 
+                    if ~this.isLoading_ && isempty(this.errorMsg_)
+                        this.focusedBrowserID_ = browser.getIdentifier;
+                        this.focusedBrowser_ = browser; 
+                        if evnt.CanGoBack ~= this.canGoBack_
+                            this.canGoBack_ = evnt.CanGoBack;
+                            notify(this,'CanGoBackUpdated')
+                        end
+                        if evnt.CanGoForward ~= this.canGoForward_
+                            this.canGoForward_ = evnt.CanGoForward;
+                            notify(this,'CanGoForwardUpdated')
+                        end
+                        if this.retrieveFavicon_
+                            icon = this.fetchFavicon(this.favIconMap_,...
+                                this.getDomain(browser.getURL),this.GENERIC_ICON); 
+                            if icon ~= this.favicon_
+                                this.favicon_ = icon;
+                                notify(this,'IconChanged');
+                            end
+                        end
+                    end
                 case web.EventType.LOAD_START.getCode
-                    this.favicon_ = this.fetchFavicon(this.favIconMap_,...
-                        this.getDomain(browser.getURL),this.GENERIC_ICON);  
-                    notify(this,'IconChanged');                    
+
                 case web.EventType.LOAD_END.getCode
                    
                 case web.EventType.BEFORE_POPUP.getCode
                     
                 case web.EventType.AFTER_CREATED.getCode      
-                    this.focusedBrowserID_ = evnt.BrowserId;
-                    this.focusedBrowser_ = browser;                    
+                   
                 case web.util.AFTER_PARENT_CHANGED
                     
                 case web.util.ON_DIALOG.getCode
@@ -696,7 +706,7 @@ classdef Browser < handle
         function domain = getDomain( URL )
             
             domain = [];
-            
+
             if contains(URL.toString.char,'data'); return; end
 
             try
@@ -784,8 +794,8 @@ classdef Browser < handle
         function msg = createErrorMessage( errorCode, errorText, failedUrl )
 
             msg = '<html><head><title>Error while loading</title></head><body>';
-            msg = [msg,'<h1>',errorCode.toString.char,'</h1>'];
-            msg = [msg,'<h3>Failed to load ', char(failedUrl),'</h3>'];
+            msg = [msg,'<h1 style="text-align:center">',errorCode.toString.char,'</h1>'];
+            msg = [msg,'<h4>Failed to load : <br>', char(failedUrl),'</h4>'];
             if ~isempty(errorText)
                 msg = [msg,'<p>',char(errorText),'</p>'];
             end
