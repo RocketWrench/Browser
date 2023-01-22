@@ -479,18 +479,17 @@ classdef Browser < handle
             browser = evnt.Browser;
 
             switch evnt.Type.getCode
-                case web.EventType.LOAD_ERROR.getCode
-                    if evnt.Frame.isMainFrame()
-                        errorCode = evnt.ErrorCode;
-                        this.errorCode_ = errorCode.toString.char;
-                        if errorCode ~= web.ErrorCode.ERR_NONE &&...
-                           errorCode ~= web.ErrorCode.ERR_ABORTED                        
-                            this.errorMsg_ = this.createErrorMessage(errorCode,evnt.ErrorText,evnt.URL);
-                            browser.stopLoad();
-                        end  
+                case web.EventType.LOAD_ERROR.getCode  
+                    if ~evnt.IsMainFrame; return; end
+                    if ~isequal(evnt.ErrorCode.getCode,web.ErrorCode.ERR_NONE.getCode) &&...
+                       ~isequal(evnt.ErrorCode.getCode,web.ErrorCode.ERR_ABORTED.getCode)
+                        this.errorCode_ = evnt.ErrorCode;
+                        this.errorMsg_ = this.createErrorMessage(...
+                            this.errorCode_,evnt.ErrorText,evnt.URL);
+                        browser.stopLoad();
                     end
                 case web.EventType.ADDRESS_CHANGE.getCode
-                    if ~strcmp(this.url_,char(evnt.URL))
+                    if ~strcmp(this.url_,char(evnt.URL)) && evnt.IsMainFrame
                         this.url_ = char(evnt.URL);
                         notify(this,'AddressChanged');
                     end
@@ -794,7 +793,11 @@ classdef Browser < handle
         function msg = createErrorMessage( errorCode, errorText, failedUrl )
 
             msg = '<html><head><title>Error while loading</title></head><body>';
-            msg = [msg,'<h1 style="text-align:center">',errorCode.toString.char,'</h1>'];
+            try
+                msg = [msg,'<h1 style="text-align:center">',errorCode.toString.char,'</h1>'];
+            catch
+                msg = [msg,'<h1 style="text-align:center">UNKOWN_ERROR</h1>'];
+            end
             msg = [msg,'<h4>Failed to load : <br>', char(failedUrl),'</h4>'];
             if ~isempty(errorText)
                 msg = [msg,'<p>',char(errorText),'</p>'];
@@ -817,10 +820,22 @@ classdef Browser < handle
                              upper(java.lang.Boolean(evnt.CanGoBack).toString.char),', ',...
                              upper(java.lang.Boolean(evnt.CanGoForward).toString.char),')'];
                 msg = sprintf(msg,state);
+            elseif isequal(typecode,web.EventType.LOAD_START.getCode) ||...
+                    isequal(typecode,web.EventType.LOAD_END.getCode) 
+                try
+                    frameName = [' : Frame name : ',evnt.FrameName.toString.char];
+                catch
+                    frameName = '';
+                end
+                msg = sprintf(msg,frameName);
+            elseif isequal(typecode,web.EventType.TITLE_CHANGE.getCode)
+                msg = sprintf(msg,evnt.Title.toString.char);
             else
                 msg = sprintf(msg,' ');
             end
+            warning('off')
             fprintf(msg)
+            warning('on')
         end
     end
 
