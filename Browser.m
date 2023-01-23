@@ -9,43 +9,49 @@ classdef Browser < handle
         CanGoBack
         CanGoForward
         ErrorCode
-        StatusMessage
-        DisplayDebugMessages
+        StatusMessage        
     end
 
     properties(Access = public, Dependent = true)
 
-        ID
+        BrowserID
         RetriveFavicon
         EnableContextMenu
         EnableAddressPane
+        ShowDebug
     end
 
     properties(Access = protected)
 
-        client;
-        clientListeners;
+        client_;
+        clientListeners_;
 
         browsers_ = java.util.HashMap;
         freeBrowserIDs(:,1) int32;
         focusedBrowserID_;
         focusedBrowser_;
+
         devTools_;
+
         maxFreeBrowsers_(1,1) uint8 = 2;
 
-        url_(1,:) char = Browser.BLANK_URL;
+        url_(1,:) char = Browser.DEFAULT_URL;
         favicon_ = [];
-        favIconMap_
+        favIconMap_;
+
         title_(1,:) char  = '';
         statusMessage_(1,:) char = '';
+
         errorCode_(1,:) char = '';
-        errorMsg_(1,:) char  = '';        
+        errorMsg_(1,:) char  = '';
+
+        handleListeners_
     end
 
     properties(Access = protected)
         % flags
         overrideOSR_(1,1) logical = false;
-        useOSR_(1,1) logical = false;
+        useOSR_(1,1) logical = isunix();
         isTransparent_(1,1) logical = false;
         isLoading_(1,1) logical = false;
         canGoBack_(1,1) logical = false;
@@ -79,102 +85,99 @@ classdef Browser < handle
     end
 
     methods
-        function this = Browser( URL, parent, position, units )
+        function this = Browser( URL, parent, position )
 
-            narginchk(0,4) 
-
-            this.useOSR_ = isunix();
-            
-            this.configureClient();             
-
-            doInstall = false;
+            narginchk(0,4)                      
 
             if nargin
+                this.url_ = this.validateURL(URL);
+                this.initialize();
 
-                if ~isempty(URL)
-                    [URL, msg] = this.validateURL(URL);
-                    if ~isempty(URL)
-                        this.url_ = URL;
-                    else
-                        error('webBrowser:NullOrMalformedURL',msg)
-                    end 
-                end
-
-                if nargin >= 2 && any(ishghandle(parent))
-                    doInstall = isvalid(parent);                    
-                end
-                
-                if doInstall
+                if nargin > 1
                     pos = this.DEFAULT_POSITION;
-                    if nargin >= 3
+                    if nargin > 2
                         pos = position;
-                    else
-                        units = 'norm';
                     end
-                    this.install(this.url_,parent,pos);
+                    this.install(parent,pos);
                 end                
             end           
         end
 
         function delete( this )
-            try this.client.dispose(); catch; end
-            this.removeClient()
-            try delete(this.clientListeners); catch; end
-        end
+
+            try delete(this.clientListeners_); catch; end
+            try delete(this.handleListeners_); catch; end
+            try this.client_.dispose(); catch; end 
+            %this.removeClient()           
+          end
 
     end
 
     methods(Access = public)
 
-        function varargout = install( this, URL, hparent, position )
-            % install browser panel in a hg parent
-            drawnow()            
+        function varargout = install( this, hparent, position )
+            % install browser panel in a hg parent            
 
-            this.url_ = this.parseURL(URL);
-            browser = this.getNewBrowser();
-            %browser.setCloseAllowed();
+            narginchk(1,3)
+            nargoutchk(0,3); 
+
+            drawnow();
+            
+            browser = this.focusedBrowser_;
 
             if this.enableAddressPane_
-                browserPanel = this.installAddressPane(browser);
+                browserPanel = this.getPanelWithAddressPane(browser);                
             else
-                browserPanel = handle(browser.getUIComponent(),'CallbackProperties');             
+                browserPanel = handle(browser.getUIComponent(),'CallbackProperties'); 
+                browserPanel.AncestorRemovedCallback = @this.onBrowserPanelAction; 
             end
+            
+            browserPanel.setName(num2str(browser.getIdentifier));
+            browserPanel.putClientProperty('CEFBrowser',browser);
+                         
 
-            container = [];
-            if nargin > 2 && isvalid(hparent)
+            if nargin > 1
+                if ~isvalid(hparent)
+                    error('webBrowser:InvalidParent', 'hparent must be a valid graphics handle')
+                end
 
-                if nargin < 4
+                if nargin < 3
                     pos = this.DEFAULT_POSITION;
                 else
                     pos = position;
-                end
-
+                end               
+                
                 container = this.createJavaWrapperPanel(hparent,browserPanel,pos);
+                drawnow() 
+                this.installHandleListener(hparent,browser);
+            end   
 
-                drawnow()  
-            end
-
-            this.focusedBrowserID_ = browser.getIdentifier;
-            this.focusedBrowser_ = browser;
-            
-            browserPanel.setName(num2str(this.focusedBrowserID_));
-            browserPanel.putClientProperty('CEFBrowser',browser);
-            browserPanel.AncestorRemovedCallback = @this.onBrowserPanelAction;
-
-            this.hasFirstBrowserBeenCreated_ = true;
+           container = [];
 
             if nargout
                 if nargout == 1
                     varargout{1} = browserPanel;
                 elseif nargout == 2
                     varargout{1} = browserPanel;
-                    varargout{2} = browser;
+                    varargout{2} = this.focusedBrowser_;
                 else
                     varargout{1} = browserPanel;
-                    varargout{2} = browser;  
+                    varargout{2} = this.focusedBrowser_; 
                     varargout{3} = container; 
                 end
             end
+        end
+
+        function addNew( this, URL )
+
+            if nargin > 1
+                this.url_ = this.validateURL(URL);
+            end
+            osr = this.useOSR_ | this.overrideOSR_;
+            this.focusedBrowser_ = this.getBrowser(this.client_,this.url_,...
+                osr,this.isTransparent_);
+            this.focusedBrowserID_ = this.focusedBrowser_.getIdentifier();
+            drawnow();
         end
 
         function load( this, URL)
@@ -194,7 +197,8 @@ classdef Browser < handle
                 URL = this.DEFAULT_URL;
             end
             browser.stopLoad();
-            browser.loadURL(this.parseURL(URL));
+            this.url_ = this.validateURL(URL);
+            browser.loadURL(this.url_);
         end
 
         function loadString( this, strContent, mimeType, browser )
@@ -273,16 +277,8 @@ classdef Browser < handle
             end
         end
 
-        function showDevTools( this, browser )
-            % Doesnt work
-            if nargin == 1
-                browser = this.focusedBrowser_;
-            end
-            
-            if this.getSettings().remote_debugging_port > 0
-                % this.devTools_ = browser.getDevtools();
-                % TODO: 
-            end
+        function showDevTools( this, browser ) %#ok<INUSD> 
+
         end
 
         function setMaxFreeBrowsers( this, n )
@@ -317,8 +313,9 @@ classdef Browser < handle
             val = this.errorCode_;
         end         
 
-        function val = get.ID( this )
-            val = this.focusedBrowserID_;
+        function val = get.BrowserID( this )
+            %val = this.focusedBrowserID_;
+            val = this.focusedBrowser_.getIdentifier();
         end
 
         function val = get.Favicon( this )
@@ -369,53 +366,52 @@ classdef Browser < handle
             end
         end 
 
-        function val = get.DisplayDebugMessages( this )
+        function val = get.ShowDebug( this )
             val = this.debug_;
         end
 
-        function set.DisplayDebugMessages( this, val )
+        function set.ShowDebug( this, val )
             this.debug_ = logical(val);
         end
     end
 
+    methods(Access = public, Hidden = true)
+
+        function browsers = getAllBrowsers( this )
+            browsers = this.getFieldValueByName(this.client_,'browser_');
+            try browsers = browsers.values().toArray(); catch; end
+        end
+    end
+
     methods(Access = protected)
+
+        function initialize( this)
+
+            this.configureClient(); 
+            this.hasFirstBrowserBeenCreated_ = true;
+            this.focusedBrowser_ = this.getNewBrowser();
+            this.focusedBrowserID_ = this.focusedBrowser_.getIdentifier();            
+        end
         
         function configureClient( this )
 
-            if isempty(this.client)
-                this.client = this.getClient();                
+            if isempty(this.client_)
+                this.client_ = this.getClient();                
             end
             this.installClientListeners();
         end
         
         function browser = getNewBrowser( this )
 
-            browser = this.getFree();
-            if isempty(browser)
-                osr = this.useOSR_ | this.overrideOSR_;
-                browser = this.getBrowser(this.client,this.url_,osr,this.isTransparent_);
-                if ~this.hasFirstBrowserBeenCreated_
-                    this.browsers_ = this.getFieldValueByName(this.client,'browser_');
-                end
-            else
-                this.loadURL(this.url_,browser);
-            end    
+            osr = this.useOSR_ | this.overrideOSR_;
+            browser = this.getBrowser(this.client_,this.url_,osr,this.isTransparent_);  
             browser.createImmediately();
         end
-
-        function browser = getFree( this )
-
-            browser = [];
-            if ~isempty(this.freeBrowserIDs)
-                browser = this.browsers_.get(this.freeBrowserIDs(1));
-                this.freeBrowserIDs(1) = [];
-            end
-        end        
 
         function removeClient( this )
             % TODO: rethink this
             clients = this.getClients();
-            try clients.remove(this.client); catch; end
+            try clients.remove(this.client_); catch; end
         end
     end
 
@@ -424,55 +420,78 @@ classdef Browser < handle
         function installClientListeners( this )
 
             displayHandler = web.DisplayHandler();
-            this.client.addDisplayHandler(displayHandler);
+            this.client_.addDisplayHandler(displayHandler);
 
             loadHandler = web.LoadHandler();
-            this.client.addLoadHandler(loadHandler); 
+            this.client_.addLoadHandler(loadHandler); 
 
             lifeSpanHandler = web.LifeSpanHandler();
-            this.client.addLifeSpanHandler(lifeSpanHandler);
+            this.client_.addLifeSpanHandler(lifeSpanHandler);
             
             jsDialogHandler = web.JSDialogHandler();
-            this.client.addJSDialogHandler(jsDialogHandler);
+            this.client_.addJSDialogHandler(jsDialogHandler);
             
             downloadHandler = web.DownloadHandler();
-            this.client.addDownloadHandler(downloadHandler);
+            this.client_.addDownloadHandler(downloadHandler);
 
             contextMenuHandler = web.ContextMenuHandler();
-            this.client.removeContextMenuHandler();
-            this.client.addContextMenuHandler(contextMenuHandler);
+            this.client_.removeContextMenuHandler();
+            this.client_.addContextMenuHandler(contextMenuHandler);
 
-            this.clientListeners = [...
+            this.clientListeners_ = [...
                 addlistener(displayHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(loadHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(lifeSpanHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(jsDialogHandler.getCallback,'delayed',@this.onClientAction);...
-                addlistener(downloadHandler.getCallback,'delayed',@this.onImageDownload);...
-                addlistener(contextMenuHandler.getViewSourceCallback,'delayed',@this.onGetSource)];           
+                addlistener(downloadHandler.getCallback,'delayed',@this.onClientAction);...
+                addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction)];           
         end
 
         function setContextMenuHandler( this )
+
             if this.isContextMenuEnabled_
-                contextMenuHandler = web.ContextMenuHandler();
-                
-                this.client.addContextMenuHandler(contextMenuHandler);
+                contextMenuHandler = web.ContextMenuHandler();                
+                this.client_.addContextMenuHandler(contextMenuHandler);
+            end
+        end        
+
+        function installHandleListener( this, handle, browser )
+
+            fig = ancestor(handle,'figure');
+            handleListener = addlistener(fig,'ObjectBeingDestroyed',@(s,e,b) this.onParentDestroyed(s,e,browser));
+            if isempty(this.handleListeners_)
+                this.handleListeners_ = handleListener;
+            else
+                this.handleListeners_ = [this.handleListeners_,handleListener];
+            end
+        end
+
+        function onParentDestroyed( this, src, evnt, browser )
+            
+            try
+                browser.getUIComponent.removeNotify();
+                browser.setCloseAllowed();
+                browser.close(true);
+            catch
             end
         end
 
         function onBrowserPanelAction( this, src, evnt )
 
             if evnt.getID == javax.swing.event.AncestorEvent.ANCESTOR_REMOVED
-                browser = src.getClientProperty('CEFBrowser');
-                browser.close(true);
-                
-                if ~src.isValid
-                    try this.freeBrowserIDs(end+1) = int32(str2double(src.getName.char)); catch; end
+                try
+                        browser = src.getClientProperty('CEFBrowser');
+                        browser.close(true);
+                        
+                        if ~src.isValid
+                            try this.freeBrowserIDs(end+1) = int32(str2double(src.getName.char)); catch; end
+                        end
+                catch
                 end
             end
-
         end
 
-        function onClientAction( this, src, evnt )
+        function onClientAction( this, ~, evnt )
 
             if ~this.hasFirstBrowserBeenCreated_; return; end
 
@@ -518,8 +537,6 @@ classdef Browser < handle
                         return
                     end 
                     if ~this.isLoading_ && isempty(this.errorMsg_)
-                        this.focusedBrowserID_ = browser.getIdentifier;
-                        this.focusedBrowser_ = browser; 
                         if evnt.CanGoBack ~= this.canGoBack_
                             this.canGoBack_ = evnt.CanGoBack;
                             notify(this,'CanGoBackUpdated')
@@ -544,27 +561,33 @@ classdef Browser < handle
                 case web.EventType.BEFORE_POPUP.getCode
                     
                 case web.EventType.AFTER_CREATED.getCode      
-                   
-                case web.util.AFTER_PARENT_CHANGED
+                    this.focusedBrowserID_ = browser.getIdentifier;
+                    this.focusedBrowser_ = browser;                    
+                case web.EventType.AFTER_PARENT_CHANGED.getCode
                     
-                case web.util.ON_DIALOG.getCode
-                    
+                case web.EventType.ON_DIALOG.getCode
+
+                case web.EventType.IMAGE_DOWNLOAD.getCode
+                    this.showImageInTool(evnt.URL,evnt.Title)
+                case web.EventType.SOURCE_DOWNLOAD.getCode  
+                    matlab.desktop.editor.newDocument(evnt.SourceText.char);
             end
 
             if this.debug_
+                if isempty(browser); browser = this.focusedBrowser_; end
                 this.printDebugMessage(browser,evnt);
             end
         end
 
-        function onImageDownload( this, src, evnt )
+        function onImageDownload( ~, ~, evnt )
 
-            url = evnt;
-            if contains(url,'webp'); return;end
+            url = evnt.URL.toString.char;
+
+            if contains(url,'webp'); return; end
             
             showImage = true;
             
-            if startsWith(url,'data')
-                
+            if startsWith(url,'data')                
                 s = split(url,',');
                 strData = s{2};
                 data = java.util.Base64.getDecoder.decode(strData);
@@ -578,33 +601,27 @@ classdef Browser < handle
                     transpose(reshape(pixelsData(2, :, :), w, h)), ...
                     transpose(reshape(pixelsData(1, :, :), w, h)));  
             else
-                try
-                    I = imread(url);
-                catch
-                    showImage = false;
-                end                    
+                try I = imread(url); catch; showImage = false;  end                    
             end
             
             if showImage
-                imtool(I);
+                try imtool(I); catch; imshow(I); end
             end
         end
 
-        function onGetSource( this, ~, pageSource )
-            
-            doc = matlab.desktop.editor.newDocument(pageSource);
-        end
-
-        function browserPanel = installAddressPane( this, browser )
+        function browserPanel = getPanelWithAddressPane( this, browser )
             import com.jidesoft.swing.JideBoxLayout 
             import javax.swing.BorderFactory
 
+            panel = handle(browser.getUIComponent,'CallbackProperties');
+            panel.AncestorRemovedCallback = @this.onBrowserPanelAction; 
 
             iconpath = [fullfile(fileparts(mfilename('fullpath')),'icons'),filesep];
             border = BorderFactory.createLineBorder(java.awt.Color.WHITE,4,true);
 
             cls = 'javax.swing.JPanel';
             browserPanel = javaObjectEDT(cls,java.awt.BorderLayout);
+            browserPanel.putClientProperty('SPLIT_PANE_CLIENT',java.lang.Boolean.TRUE);
 
             addressPane = javaObjectEDT(cls);
             addressPane.setBackground(java.awt.Color.WHITE);
@@ -657,7 +674,7 @@ classdef Browser < handle
             addressPane.add(addressField,JideBoxLayout.VARY);
             
             browserPanel.add(addressPane,'North');
-            browserPanel.add(browser.getUIComponent,'Center');
+            browserPanel.add(panel,'Center');
 
             addlistener(this,'AddressChanged',@(s,e) onAddressChange(s,e));
             addlistener(this,'CanGoBackUpdated',@(s,e) onCanGoBack(s,e));
@@ -665,37 +682,38 @@ classdef Browser < handle
 
             browserPanel = handle(browserPanel,'CallbackProperties');
 
-            function onMouseClicked( src, evnt )
+            function onMouseClicked( src, evnt ) %#ok<INUSD> 
                 java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager.clearGlobalFocusOwner;
                 addressField.requestFocus();
             end
 
-            function onAddressChange( src, evnt )                
+            function onAddressChange( src, evnt )                %#ok<INUSD> 
                 try addressField.setText(browser.getURL);catch;end
             end
         
-            function onCanGoBack( src, evnt )        
+            function onCanGoBack( src, evnt )        %#ok<INUSD> 
                 backButton.setEnabled(browser.canGoBack);
             end
         
-            function onCanGoForward( src, evnt )        
+            function onCanGoForward( src, evnt )        %#ok<INUSD> 
                 forwardButton.setEnabled(browser.canGoForward);
             end  
 
-            function str = getAddress()
-                str = addressField.getText();
-                try
-                    str = str.replaceAll(' ','%20');
-                    URI = java.net.URI(str);
-                    if ~isempty(URI.getScheme); return; end
-                    if ~isempty(URI.getHost) && ~isempty(URI.getPath); return; end
-                    part = URI.getSchemeSpecificPart();
-                    if (part.indexOf('.') == -1)
-                        str = java.lang.String(['google.com/search?q=',str.char]);
-                    end
-                catch
-                    str = java.lang.String(['google.com/search?q=',str.char]);
-                end
+            function URL = getAddress()
+                URL = addressField.getText().toString.char;
+                URL = this.validateURL(URL);
+%                 try
+%                     str = str.replaceAll(' ','%20');
+%                     URI = java.net.URI(str);
+%                     if ~isempty(URI.getScheme); return; end
+%                     if ~isempty(URI.getHost) && ~isempty(URI.getPath); return; end
+%                     part = URI.getSchemeSpecificPart();
+%                     if (part.indexOf('.') == -1)
+%                         str = java.lang.String(['google.com/search?q=',str.char]);
+%                     end
+%                 catch
+%                     str = java.lang.String(['google.com/search?q=',str.char]);
+%                 end
             end
         end        
     end
@@ -744,45 +762,48 @@ classdef Browser < handle
             end
         end
 
-        function URL = parseURL( URL )
-            try
-                if ischar(URL) || istring(URL)
-                    URL = com.mathworks.html.UrlBuilder.fromString(char(URL)).toString.char;
-                elseif isa(URL,'java.io.File')
-                    URL = com.mathworks.html.UrlBuilder.fromFile(URL).toString.char;
-                elseif isa(URL,'java.net.URL')
-                    URL = com.mathworks.html.UrlBuilder.fromURL(URL).toString.char;
-                else
-                    URL = ['google.com/search?q=',URL];
-                end
-            catch
-                URL = ['google.com/search?q=',URL];
-            end
-        end
+%         function URL = parseURL( URL )
+%             try
+%                 if ischar(URL) || istring(URL)
+%                     URL = com.mathworks.html.UrlBuilder.fromString(char(URL)).toString.char;
+%                 elseif isa(URL,'java.io.File')
+%                     URL = com.mathworks.html.UrlBuilder.fromFile(URL).toString.char;
+%                 elseif isa(URL,'java.net.URL')
+%                     URL = com.mathworks.html.UrlBuilder.fromURL(URL).toString.char;
+%                 else
+%                     URL = ['google.com/search?q=',URL];
+%                 end
+%             catch
+%                 URL = ['google.com/search?q=',URL];
+%             end
+%         end
         
         function cefClient = getClient()
-            % Maybe better to get a client from 
-            % com.mathworks.toolbox.matlab.jcefapp.JcefClient.getInstance();
+
             cefClient = org.cef.CefApp.getInstance().createClient();
         end
 
-        function clients = getClients()
-            clients = Browser.getFieldValueByName(org.cef.CefApp.getInstance(),'clients_');
+        function cefClients = getClients()
+
+            cefClients = Browser.getFieldValueByName(org.cef.CefApp.getInstance(),'clients_');
         end
+
+        function cefBrowser = getBrowser( cefClient, url, isOffScreenRendered, isTransparent )
+
+            cefBrowser = cefClient.createBrowser(url,isOffScreenRendered,isTransparent,[]);
+        end
+
+        function cefBrowsers = getBrowsers( cefClient )
+
+            cefBrowsers = Browser.getFieldValueByName(cefClient,'browser_');
+        end        
 
         function setDebugPort( port )
             % Doesn't work
             if nargin == 0
                 port = 2012;
             end
-            JcefClient = com.mathworks.toolbox.matlab.jcefapp.JcefClient.getInstance();
-            JcefClient.setDebugPort(int32(port));
-        end
-
-        function cefBrowser = getBrowser( cefClient, url, isOffScreenRendered, isTransparent )
-           %cefBrowser = javaMethodEDT('createBrowser', cefClient, url,...
-           %   isOffScreenRendered,isTransparent);
-            cefBrowser = cefClient.createBrowser(url,isOffScreenRendered,isTransparent,[]);
+            com.mathworks.toolbox.matlab.jcefapp.JcefClient.getInstance.setDebugPort(int32(port));
         end
 
         function str = formateErrorCode( errorCode )
@@ -794,10 +815,11 @@ classdef Browser < handle
 
             msg = '<html><head><title>Error while loading</title></head><body>';
             try
-                msg = [msg,'<h1 style="text-align:center">',errorCode.toString.char,'</h1>'];
+                msg = [msg,'<center><h1 style="text-align:center">',errorCode.toString.char,'</h1></center>'];
             catch
                 msg = [msg,'<h1 style="text-align:center">UNKOWN_ERROR</h1>'];
             end
+            msg = [msg,'<hr><center>ucdn/1.22.1</center>'];
             msg = [msg,'<h4>Failed to load : <br>', char(failedUrl),'</h4>'];
             if ~isempty(errorText)
                 msg = [msg,'<p>',char(errorText),'</p>'];
@@ -849,29 +871,24 @@ classdef Browser < handle
             end
         end
 
-        function [URL, msg, type] = validateURL( URL, parseSilently )
-            
-            narginchk(1,2)
+        function [ URL, type ] = validateURL( URL )            
 
-            msg = '';
-            type = '';
+            if isempty(URL); URL = 'https://www.google.com/'; end
 
-            if startsWith(URL,'data'); type = 'DATA'; return; end
+            if startsWith(URL,'data'); type = 'DATA'; return; end           
 
-            if nargin < 2
-                parseSilently = false;
-            end
-
-            if parseSilently
-                URL = com.mathworks.html.Url.parseSilently(URL);
-            else
+            try
+                URL = com.mathworks.html.Url.parse(URL);               
+                type = URL.getType.toString.char;  
+                URL = URL.toString.char;
+            catch ME
+                URL = ['google.com/search?q=',URL];
                 try
                     URL = com.mathworks.html.Url.parse(URL);
-                    type = URL.getType.toString.char;
-                    URL = URL.toString.char;                    
-                catch ME
-                    URL = '';
-                    msg = 'URL is null valued or malformed';
+                    type = URL.getType.toString.char;  
+                    URL = URL.toString.char;
+                catch
+                    error('Null or malformed URL')
                 end
             end
         end
@@ -915,6 +932,36 @@ classdef Browser < handle
             byteStr = java.util.Base64.getEncoder().encodeToString(jcontents.getBytes()).char;
             dataURI = ['data:',mimeType,';base64,',byteStr];
         end
+
+        function showImageInTool( url, suggestedName ) %#ok<INUSD> 
+            
+            if isjava(url); url = url.toString.char; end
+
+            if contains(url,'webp'); return; end
+            
+            showImage = true;
+            
+            if startsWith(url,'data')                
+                s = split(url,',');
+                strData = s{2};
+                data = java.util.Base64.getDecoder.decode(strData);
+                bais = java.io.ByteArrayInputStream(data);
+                bi = javax.imageio.ImageIO.read(bais);
+                w = bi.getWidth();
+                h = bi.getHeight;
+                pixelsData = reshape(typecast(bi.getData.getDataStorage, 'uint8'), 3, w, h);
+                I = cat(3, ...
+                    transpose(reshape(pixelsData(3, :, :), w, h)), ...
+                    transpose(reshape(pixelsData(2, :, :), w, h)), ...
+                    transpose(reshape(pixelsData(1, :, :), w, h)));  
+            else
+                try I = imread(url); catch; showImage = false;  end                    
+            end
+            
+            if showImage
+                try imtool(I); catch; imshow(I); end
+            end
+        end        
 
         function settings = getSettings()
 
