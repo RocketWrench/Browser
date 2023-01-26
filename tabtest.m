@@ -9,7 +9,6 @@ function b = tabtest( dodebug )
     b.EnableContextMenu = true;
     b.EnableAddressPane = true;
     b.ShowDebug = dodebug;
-    b.setMaxFreeBrowsers(15);
     
     addlistener(b,'IconChanged',@(s,e) onIconChange(s,e));
     addlistener(b,'TitleChanged',@(s,e) onTitleChange(s,e));
