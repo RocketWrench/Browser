@@ -9,7 +9,8 @@ classdef Browser < handle
         CanGoBack
         CanGoForward
         ErrorCode
-        StatusMessage        
+        StatusMessage
+        JSDialogCallbackFcn
     end
 
     properties(Access = public, Dependent = true)
@@ -18,7 +19,7 @@ classdef Browser < handle
         RetriveFavicon
         EnableContextMenu
         EnableAddressPane
-        ShowDebug
+        ShowDebug        
     end
 
     properties(Access = protected)
@@ -31,9 +32,9 @@ classdef Browser < handle
         focusedBrowserID_;
         focusedBrowser_;
 
-        devTools_;
+        jsDialogCallbackFcn_ = [];
 
-        maxFreeBrowsers_(1,1) uint8 = 2;
+        devTools_;
 
         url_(1,:) char = Browser.DEFAULT_URL;
         favicon_ = [];
@@ -63,7 +64,7 @@ classdef Browser < handle
         debug_(1,1) logical = false;
     end
 
-    properties(Access = protected, Constant = true)
+    properties(Access = public, Constant = true, Hidden = true)
 
         DEFAULT_URL = 'https://www.google.com/';
         DEFAULT_POSITION = [0,0,1,1];
@@ -107,8 +108,7 @@ classdef Browser < handle
 
             try delete(this.clientListeners_); catch; end
             try delete(this.handleListeners_); catch; end
-            try this.client_.dispose(); catch; end 
-            %this.removeClient()           
+            try this.client_.dispose(); catch; end     
           end
 
     end
@@ -126,7 +126,7 @@ classdef Browser < handle
             browser = this.focusedBrowser_;
 
             if this.enableAddressPane_
-                browserPanel = this.getPanelWithAddressPane(browser);                
+                browserPanel = AddressPanel.getBrowserPanel(this);                 
             else
                 browserPanel = handle(browser.getUIComponent(),'CallbackProperties'); 
                 browserPanel.AncestorRemovedCallback = @this.onBrowserPanelAction; 
@@ -134,7 +134,8 @@ classdef Browser < handle
             
             browserPanel.setName(num2str(browser.getIdentifier));
             browserPanel.putClientProperty('CEFBrowser',browser);
-                         
+
+            container = [];                         
 
             if nargin > 1
                 if ~isvalid(hparent)
@@ -150,9 +151,8 @@ classdef Browser < handle
                 container = this.createJavaWrapperPanel(hparent,browserPanel,pos);
                 drawnow() 
                 this.installHandleListener(hparent,browser);
-            end   
-
-           container = [];
+            end
+           
 
             if nargout
                 if nargout == 1
@@ -281,11 +281,6 @@ classdef Browser < handle
 
         end
 
-        function setMaxFreeBrowsers( this, n )
-            % TODDO: input checking
-            this.maxFreeBrowsers_ = n;
-        end
-
         function icon = getGenericIcon( this )
             icon = this.GENERIC_ICON;
         end
@@ -373,6 +368,16 @@ classdef Browser < handle
         function set.ShowDebug( this, val )
             this.debug_ = logical(val);
         end
+
+        function val = get.JSDialogCallbackFcn( this )
+            val = this.jsDialogCallbackFcn_;
+        end
+
+        function set.JSDialogCallbackFcn( this, val )
+            if isa(val,'function_handle') || isempty(val)
+                this.jsDialogCallbackFcn_ = val;
+            end
+        end        
     end
 
     methods(Access = public, Hidden = true)
@@ -380,6 +385,10 @@ classdef Browser < handle
         function browsers = getAllBrowsers( this )
             browsers = this.getFieldValueByName(this.client_,'browser_');
             try browsers = browsers.values().toArray(); catch; end
+        end
+
+        function browser = getFocusedBrowser( this )
+            browser = this.focusedBrowser_;
         end
     end
 
@@ -453,7 +462,7 @@ classdef Browser < handle
                 contextMenuHandler = web.ContextMenuHandler();                
                 this.client_.addContextMenuHandler(contextMenuHandler);
             end
-        end        
+        end 
 
         function installHandleListener( this, handle, browser )
 
@@ -466,7 +475,7 @@ classdef Browser < handle
             end
         end
 
-        function onParentDestroyed( this, src, evnt, browser )
+        function onParentDestroyed( ~, ~, ~, browser )
             
             try
                 browser.getUIComponent.removeNotify();
@@ -478,14 +487,13 @@ classdef Browser < handle
 
         function onBrowserPanelAction( this, src, evnt )
 
-            if evnt.getID == javax.swing.event.AncestorEvent.ANCESTOR_REMOVED
+            if (evnt.getID == javax.swing.event.AncestorEvent.ANCESTOR_REMOVED)
+                if isa(evnt.getAncestorParent,...
+                        'com.jidesoft.swing.JideTabbedPane'); return;end
                 try
-                        browser = src.getClientProperty('CEFBrowser');
-                        browser.close(true);
-                        
-                        if ~src.isValid
-                            try this.freeBrowserIDs(end+1) = int32(str2double(src.getName.char)); catch; end
-                        end
+                    browser = src.getClientProperty('CEFBrowser');
+                    browser.close(true);
+                    delete(src);                    
                 catch
                 end
             end
@@ -566,7 +574,13 @@ classdef Browser < handle
                 case web.EventType.AFTER_PARENT_CHANGED.getCode
                     
                 case web.EventType.ON_DIALOG.getCode
-
+                    if isempty(this.jsDialogCallbackFcn_)
+                        evnt.DialogCallback.Continue(true,evnt.ConsoleMessage);
+                    else
+                        this.jsDialogCallbackFcn_(evnt.DialogType.char,...
+                            evnt.URL.char,evnt.StatusMessage.char,...
+                            evnt.ConsoleMessage.char,evnt.DialogCallback);
+                    end
                 case web.EventType.IMAGE_DOWNLOAD.getCode
                     this.showImageInTool(evnt.URL,evnt.Title)
                 case web.EventType.SOURCE_DOWNLOAD.getCode  
@@ -608,114 +622,6 @@ classdef Browser < handle
                 try imtool(I); catch; imshow(I); end
             end
         end
-
-        function browserPanel = getPanelWithAddressPane( this, browser )
-            import com.jidesoft.swing.JideBoxLayout 
-            import javax.swing.BorderFactory
-
-            panel = handle(browser.getUIComponent,'CallbackProperties');
-            panel.AncestorRemovedCallback = @this.onBrowserPanelAction; 
-
-            iconpath = [fullfile(fileparts(mfilename('fullpath')),'icons'),filesep];
-            border = BorderFactory.createLineBorder(java.awt.Color.WHITE,4,true);
-
-            cls = 'javax.swing.JPanel';
-            browserPanel = javaObjectEDT(cls,java.awt.BorderLayout);
-            browserPanel.putClientProperty('SPLIT_PANE_CLIENT',java.lang.Boolean.TRUE);
-
-            addressPane = javaObjectEDT(cls);
-            addressPane.setBackground(java.awt.Color.WHITE);
-            cls = 'com.jidesoft.swing.JideBoxLayout';
-            layout = javaObjectEDT(cls,addressPane,JideBoxLayout.X_AXIS,2);
-            addressPane.setLayout(layout);
-            addressPane.setBorder(com.jidesoft.swing.PartialLineBorder(java.awt.Color(0.9,0.9,0.9,0.6),2,com.jidesoft.swing.PartialSide.SOUTH));
-            addressPane.setPreferredSize(java.awt.Dimension(200,36));
-        
-            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('arrow_move_left_lg.gif');
-            icon = javax.swing.ImageIcon([iconpath,'left.png']);
-            backButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
-            backButton.setEnabled(false);
-            backButton.setFocusable(false);
-            backButton.setBorder(border);
-            backButton.ActionPerformedCallback = @(~,~) browser.goBack;
-        
-            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('arrow_move_right_lg.gif');
-            icon = javax.swing.ImageIcon([iconpath,'right.png']);
-            forwardButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
-            forwardButton.setEnabled(false);
-            forwardButton.setFocusable(false);
-            forwardButton.setBorder(border);
-            forwardButton.ActionPerformedCallback = @(~,~) browser.goForward;
-        
-            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('refresh.gif');
-            icon = javax.swing.ImageIcon([iconpath,'refresh.png']);
-            reloadButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
-            reloadButton.setFocusable(false);
-            reloadButton.setBorder(border);
-            reloadButton.ActionPerformedCallback = @(~,~) browser.reloadIgnoreCache;
-        
-            %icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('home.gif');
-            icon = javax.swing.ImageIcon([iconpath,'home.png']);
-            homeButton = handle(javaObjectEDT('javax.swing.JButton',icon),'CallbackProperties');
-            homeButton.setFocusable(false);
-            homeButton.setBorder(border);
-            homeButton.ActionPerformedCallback = @(~,~) browser.loadURL(this.DEFAULT_URL);            
-            
-            addressField = handle(javaObjectEDT('javax.swing.JTextField',browser.getURL),'CallbackProperties');
-            addressField.setBorder(BorderFactory.createCompoundBorder(border,BorderFactory.createEmptyBorder(0,4,0,0)));
-            addressField.setBackground(java.awt.Color(0.9,0.9,0.9,0.6))  
-            addressField.ActionPerformedCallback = @(~,~) browser.loadURL(getAddress);
-            addressField.MouseClickedCallback = @(~,~) onMouseClicked;
-        
-            addressPane.add(backButton,JideBoxLayout.FIX);
-            addressPane.add(forwardButton,JideBoxLayout.FIX);
-            addressPane.add(reloadButton,JideBoxLayout.FIX);
-            addressPane.add(homeButton,JideBoxLayout.FIX);
-            addressPane.add(addressField,JideBoxLayout.VARY);
-            
-            browserPanel.add(addressPane,'North');
-            browserPanel.add(panel,'Center');
-
-            addlistener(this,'AddressChanged',@(s,e) onAddressChange(s,e));
-            addlistener(this,'CanGoBackUpdated',@(s,e) onCanGoBack(s,e));
-            addlistener(this,'CanGoForwardUpdated',@(s,e) onCanGoForward(s,e)); 
-
-            browserPanel = handle(browserPanel,'CallbackProperties');
-
-            function onMouseClicked( src, evnt ) %#ok<INUSD> 
-                java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager.clearGlobalFocusOwner;
-                addressField.requestFocus();
-            end
-
-            function onAddressChange( src, evnt )                %#ok<INUSD> 
-                try addressField.setText(browser.getURL);catch;end
-            end
-        
-            function onCanGoBack( src, evnt )        %#ok<INUSD> 
-                backButton.setEnabled(browser.canGoBack);
-            end
-        
-            function onCanGoForward( src, evnt )        %#ok<INUSD> 
-                forwardButton.setEnabled(browser.canGoForward);
-            end  
-
-            function URL = getAddress()
-                URL = addressField.getText().toString.char;
-                URL = this.validateURL(URL);
-%                 try
-%                     str = str.replaceAll(' ','%20');
-%                     URI = java.net.URI(str);
-%                     if ~isempty(URI.getScheme); return; end
-%                     if ~isempty(URI.getHost) && ~isempty(URI.getPath); return; end
-%                     part = URI.getSchemeSpecificPart();
-%                     if (part.indexOf('.') == -1)
-%                         str = java.lang.String(['google.com/search?q=',str.char]);
-%                     end
-%                 catch
-%                     str = java.lang.String(['google.com/search?q=',str.char]);
-%                 end
-            end
-        end        
     end
 
     methods(Access = protected, Static = true)
@@ -730,12 +636,12 @@ classdef Browser < handle
                 if isa(URL,'com.mathworks.html.Url')
                     URL = java.net.URL(URL.toString);
                 else
-                    URL = com.mathworks.html.Url.parseSilently(URL);
+                    URL = com.mathworks.html.Url.parseSilently(URL);  
                     if isempty(URL); return; end
                     URL = java.net.URL(URL.toString);
                 end
-    
-                domain = URL.getHost; 
+                URI = java.net.URI(URL.toString);
+                domain = URI.getHost();
             catch
             end
         end
@@ -762,22 +668,6 @@ classdef Browser < handle
             end
         end
 
-%         function URL = parseURL( URL )
-%             try
-%                 if ischar(URL) || istring(URL)
-%                     URL = com.mathworks.html.UrlBuilder.fromString(char(URL)).toString.char;
-%                 elseif isa(URL,'java.io.File')
-%                     URL = com.mathworks.html.UrlBuilder.fromFile(URL).toString.char;
-%                 elseif isa(URL,'java.net.URL')
-%                     URL = com.mathworks.html.UrlBuilder.fromURL(URL).toString.char;
-%                 else
-%                     URL = ['google.com/search?q=',URL];
-%                 end
-%             catch
-%                 URL = ['google.com/search?q=',URL];
-%             end
-%         end
-        
         function cefClient = getClient()
 
             cefClient = org.cef.CefApp.getInstance().createClient();
@@ -817,7 +707,7 @@ classdef Browser < handle
             try
                 msg = [msg,'<center><h1 style="text-align:center">',errorCode.toString.char,'</h1></center>'];
             catch
-                msg = [msg,'<h1 style="text-align:center">UNKOWN_ERROR</h1>'];
+                msg = [msg,'<center><h1 style="text-align:center">UNKOWN_ERROR</h1></center>'];
             end
             msg = [msg,'<hr><center>ucdn/1.22.1</center>'];
             msg = [msg,'<h4>Failed to load : <br>', char(failedUrl),'</h4>'];
