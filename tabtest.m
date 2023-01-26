@@ -16,7 +16,10 @@ function b = tabtest( dodebug )
     tabPane = creatabbedPane();
     tabPane.ComponentRemovedCallback = @(s,e) onTabDeleted(s,e);
 
-    addTabBut = handle(javaObjectEDT('javax.swing.JButton','Add Tab'),'CallbackProperties');
+    iconpath = [fullfile(fileparts(mfilename('fullpath')),'icons'),filesep];
+    icon = javax.swing.ImageIcon([iconpath,'addtab.png']);
+    addTabBut = handle(javaObjectEDT('com.jidesoft.swing.NullJideButton',icon),'CallbackProperties');
+    addTabBut.setFocusable(false);
     addTabBut.ActionPerformedCallback = @(s,e) addNewTab(s,e);
 
     tabPane.setTabTrailingComponent(addTabBut);
@@ -66,7 +69,9 @@ function tabPane = creatabbedPane()
     tabPane.setShowTabButtons(false);
     tabPane.setHideOneTab(false);
     tabPane.setLayoutTrailingComponentBeforeButtons(true);
-    tabPane.setTabShape(com.jidesoft.swing.JideTabbedPane.SHAPE_ROUNDED_FLAT)
-    tabPane.setColorTheme(com.jidesoft.swing.JideTabbedPane.COLOR_THEME_OFFICE2003);
+%     tabPane.setTabShape(com.jidesoft.swing.JideTabbedPane.SHAPE_ROUNDED_FLAT)
+%     tabPane.setColorTheme(com.jidesoft.swing.JideTabbedPane.COLOR_THEME_OFFICE2003);
+    tabPane.setTabInsets(java.awt.Insets(4,4,4,4));
+    tabPane.setTabResizeMode(com.jidesoft.swing.JideTabbedPane.RESIZE_MODE_DEFAULT);
 
 end
