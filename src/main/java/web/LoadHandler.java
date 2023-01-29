@@ -6,6 +6,7 @@ import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.network.CefRequest;
 import com.mathworks.jmi.Callback;
+import web.ui.BrowserPanel;
         
 public class LoadHandler extends CefLoadHandlerAdapter{
     private final Callback callback_ = new Callback();
@@ -15,7 +16,15 @@ public class LoadHandler extends CefLoadHandlerAdapter{
                                      boolean isLoading,
                                      boolean canGoBack,
                                      boolean canGoForward){
-
+        if (browser.getUIComponent().getParent() != null){
+            if (browser.getUIComponent().getParent().getName().equalsIgnoreCase("BrowserPanel")){
+                BrowserPanel parent = (BrowserPanel) browser.getUIComponent().getParent();
+                if (parent.hasAddressPane()){
+                    parent.update(browser, isLoading, canGoBack, canGoForward);
+                    System.out.println("OnLoadingStateChange");
+                }
+            }
+        }
         this.callback_.postCallback(new BrowserEventData(browser,isLoading,canGoBack,canGoForward));
     }
     

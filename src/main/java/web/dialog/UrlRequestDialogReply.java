@@ -1,6 +1,5 @@
 package web.dialog;
 
-
 import org.cef.callback.CefAuthCallback;
 import org.cef.callback.CefURLRequestClient;
 import org.cef.network.CefRequest;

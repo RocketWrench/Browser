@@ -22,8 +22,10 @@ public class ContextMenuHandler implements CefContextMenuHandler {
     }
 
     @Override
-    public void onBeforeContextMenu(
-            CefBrowser browser, CefFrame frame, CefContextMenuParams params, CefMenuModel model) {
+    public void onBeforeContextMenu(CefBrowser browser,
+                                    CefFrame frame,
+                                    CefContextMenuParams params,
+                                    CefMenuModel model) {
         model.clear();
 
         // Navigation menu
@@ -38,10 +40,10 @@ public class ContextMenuHandler implements CefContextMenuHandler {
         
         String URL = params.getSourceUrl();  
         if (params.hasImageContents() && URL != null){
-            String displayStr = (URL.contains("webp"))?"Download Image...":"Open Image in imtool...";
+            String displayStr = (URL.contains("webp"))?"Download image...":"Open image in imtool...";
             model.addItem(MenuId.MENU_ID_USER_FIRST,displayStr );
         }
-        model.addItem(MenuId.MENU_ID_VIEW_SOURCE, "View Source in Editor...");
+        model.addItem(MenuId.MENU_ID_VIEW_SOURCE, "View source in Editor...");
         
         /*JComponent parent = (JComponent) browser.getUIComponent().getParent();
         Boolean bool = (Boolean) parent.getClientProperty("SPLIT_PANE_CLIENT");

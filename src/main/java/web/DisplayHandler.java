@@ -6,6 +6,7 @@ import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.CefSettings;
 import com.mathworks.jmi.Callback;
+import web.ui.BrowserPanel;
         
 public class DisplayHandler extends CefDisplayHandlerAdapter{
     
@@ -13,7 +14,15 @@ public class DisplayHandler extends CefDisplayHandlerAdapter{
     
     @Override
     public void onAddressChange(CefBrowser browser, CefFrame frame, String url){
-        
+         if (browser.getUIComponent().getParent() != null){
+            if (browser.getUIComponent().getParent().getName().equalsIgnoreCase("BrowserPanel")){
+                BrowserPanel parent = (BrowserPanel) browser.getUIComponent().getParent();
+                if (parent.hasAddressPane()){
+                    parent.setAddress(browser, url);
+                    System.out.println("OnAddressChange");
+                }
+            }
+        }       
         this.callback_.postCallback(new BrowserEventData(browser,frame,url));
     }
     
