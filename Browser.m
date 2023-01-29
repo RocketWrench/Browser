@@ -9,8 +9,7 @@ classdef Browser < handle
         CanGoBack
         CanGoForward
         ErrorCode
-        StatusMessage
-        JSDialogCallbackFcn
+        StatusMessage        
     end
 
     properties(Access = public, Dependent = true)
@@ -19,34 +18,37 @@ classdef Browser < handle
         RetriveFavicon
         EnableContextMenu
         EnableAddressPane
-        ShowDebug        
+        ShowDebug
     end
 
     properties(Access = protected)
 
-        client_;
-        clientListeners_;
+        client_;        
 
         browsers_ = java.util.HashMap;
         freeBrowserIDs(:,1) int32;
-        focusedBrowserID_;
+        focusedBrowserID_(1,1) int32 = -1;
         focusedBrowser_;
-
-        jsDialogCallbackFcn_ = [];
 
         devTools_;
 
         url_(1,:) char = Browser.DEFAULT_URL;
+
         favicon_ = [];
         favIconMap_;
 
         title_(1,:) char  = '';
         statusMessage_(1,:) char = '';
+        consoleMessage_(1,:) char = '';
 
         errorCode_(1,:) char = '';
         errorMsg_(1,:) char  = '';
-
-        handleListeners_
+        
+        clientListeners_;
+        handleListeners_;
+        browserPanelListeners_;
+        displayListener_;
+        loadListener_;
     end
 
     properties(Access = protected)
@@ -61,7 +63,7 @@ classdef Browser < handle
         retrieveFavicon_(1,1) logical = false;
         isContextMenuEnabled_(1,1) logical = false
         enableAddressPane_(1,1) logical = false;
-        debug_(1,1) logical = false;
+        showDebug_(1,1) logical = false;
     end
 
     properties(Access = public, Constant = true, Hidden = true)
@@ -69,7 +71,7 @@ classdef Browser < handle
         DEFAULT_URL = 'https://www.google.com/';
         DEFAULT_POSITION = [0,0,1,1];
         BLANK_URL = 'about:blank';
-        NO_ERROR = 'ERROR_NONE(0)';
+        NO_ERROR = [web.ErrorCode.ERR_NONE.toString.char,'(',int2str(web.ErrorCode.ERR_NONE.getCode),')'];
         GENERIC_ICON = com.mathworks.common.icons.IconEnumerationUtils.getIcon('web_globe.png');
     end
 
@@ -86,6 +88,7 @@ classdef Browser < handle
     end
 
     methods
+
         function this = Browser( URL, parent, position )
 
             narginchk(0,4)                      
@@ -108,9 +111,10 @@ classdef Browser < handle
 
             try delete(this.clientListeners_); catch; end
             try delete(this.handleListeners_); catch; end
-            try this.client_.dispose(); catch; end     
-          end
-
+            try delete(this.loadListener_); catch; end
+            try delete(this.displayListener_); catch; end
+            try this.client_.dispose(); catch; end          
+        end
     end
 
     methods(Access = public)
@@ -119,40 +123,34 @@ classdef Browser < handle
             % install browser panel in a hg parent            
 
             narginchk(1,3)
-            nargoutchk(0,3); 
-
-            drawnow();
+            nargoutchk(0,3);             
             
             browser = this.focusedBrowser_;
-
-            if this.enableAddressPane_
-                browserPanel = AddressPanel.getBrowserPanel(this);                 
-            else
-                browserPanel = handle(browser.getUIComponent(),'CallbackProperties'); 
-                browserPanel.AncestorRemovedCallback = @this.onBrowserPanelAction; 
-            end
             
-            browserPanel.setName(num2str(browser.getIdentifier));
-            browserPanel.putClientProperty('CEFBrowser',browser);
+            browserPanel = handle(javaObjectEDT('web.ui.BrowserPanel',browser,this.enableAddressPane_),'CallbackProperties');
+            
+            this.loadListener_ = addlistener(browserPanel.getLoadHandlerCallback,'delayed',@this.onClientAction);
+            this.displayListener_ = addlistener(browserPanel.getDisplayHandlerCallback,'delayed',@this.onClientAction);
 
             container = [];                         
 
             if nargin > 1
-                if ~isvalid(hparent)
-                    error('webBrowser:InvalidParent', 'hparent must be a valid graphics handle')
-                end
+                assert(isvalid(hparent),'webBrowser:InvalidParent',...
+                    'hparent must be a valid graphics handle')
 
                 if nargin < 3
                     pos = this.DEFAULT_POSITION;
                 else
                     pos = position;
-                end               
+                end   
+
+                drawnow();
                 
                 container = this.createJavaWrapperPanel(hparent,browserPanel,pos);
-                drawnow() 
+                drawnow()
+
                 this.installHandleListener(hparent,browser);
-            end
-           
+            end           
 
             if nargout
                 if nargout == 1
@@ -309,14 +307,11 @@ classdef Browser < handle
         end         
 
         function val = get.BrowserID( this )
-            %val = this.focusedBrowserID_;
             val = this.focusedBrowser_.getIdentifier();
         end
 
         function val = get.Favicon( this )
-            %if ~isempty(this.favicon_)
                 val = this.favicon_;
-            %end
         end
 
         function val = get.IsLoading( this )
@@ -362,22 +357,12 @@ classdef Browser < handle
         end 
 
         function val = get.ShowDebug( this )
-            val = this.debug_;
+            val = this.showDebug_;
         end
 
         function set.ShowDebug( this, val )
-            this.debug_ = logical(val);
+            this.showDebug_ = logical(val);
         end
-
-        function val = get.JSDialogCallbackFcn( this )
-            val = this.jsDialogCallbackFcn_;
-        end
-
-        function set.JSDialogCallbackFcn( this, val )
-            if isa(val,'function_handle') || isempty(val)
-                this.jsDialogCallbackFcn_ = val;
-            end
-        end        
     end
 
     methods(Access = public, Hidden = true)
@@ -414,7 +399,7 @@ classdef Browser < handle
 
             osr = this.useOSR_ | this.overrideOSR_;
             browser = this.getBrowser(this.client_,this.url_,osr,this.isTransparent_);  
-            browser.createImmediately();
+            %browser.createImmediately();
         end
 
         function removeClient( this )
@@ -445,7 +430,7 @@ classdef Browser < handle
 
             contextMenuHandler = web.ContextMenuHandler();
             this.client_.removeContextMenuHandler();
-            this.client_.addContextMenuHandler(contextMenuHandler);
+            this.client_.addContextMenuHandler(contextMenuHandler);         
 
             this.clientListeners_ = [...
                 addlistener(displayHandler.getCallback,'delayed',@this.onClientAction);...
@@ -462,12 +447,13 @@ classdef Browser < handle
                 contextMenuHandler = web.ContextMenuHandler();                
                 this.client_.addContextMenuHandler(contextMenuHandler);
             end
-        end 
+        end        
 
         function installHandleListener( this, handle, browser )
 
             fig = ancestor(handle,'figure');
-            handleListener = addlistener(fig,'ObjectBeingDestroyed',@(s,e,b) this.onParentDestroyed(s,e,browser));
+            handleListener = addlistener(fig,'ObjectBeingDestroyed',...
+                @(s,e,b) this.onParentDestroyed(s,e,browser));
             if isempty(this.handleListeners_)
                 this.handleListeners_ = handleListener;
             else
@@ -485,7 +471,7 @@ classdef Browser < handle
             end
         end
 
-        function onBrowserPanelAction( this, src, evnt )
+        function onBrowserPanelAction( ~, src, evnt )
 
             if (evnt.getID == javax.swing.event.AncestorEvent.ANCESTOR_REMOVED)
                 if isa(evnt.getAncestorParent,...
@@ -555,7 +541,7 @@ classdef Browser < handle
                         end
                         if this.retrieveFavicon_
                             icon = this.fetchFavicon(this.favIconMap_,...
-                                this.getDomain(browser.getURL),this.GENERIC_ICON); 
+                                this.getDomain(browser.getURL)); 
                             if icon ~= this.favicon_
                                 this.favicon_ = icon;
                                 notify(this,'IconChanged');
@@ -574,20 +560,14 @@ classdef Browser < handle
                 case web.EventType.AFTER_PARENT_CHANGED.getCode
                     
                 case web.EventType.ON_DIALOG.getCode
-                    if isempty(this.jsDialogCallbackFcn_)
-                        evnt.DialogCallback.Continue(true,evnt.ConsoleMessage);
-                    else
-                        this.jsDialogCallbackFcn_(evnt.DialogType.char,...
-                            evnt.URL.char,evnt.StatusMessage.char,...
-                            evnt.ConsoleMessage.char,evnt.DialogCallback);
-                    end
+
                 case web.EventType.IMAGE_DOWNLOAD.getCode
                     this.showImageInTool(evnt.URL,evnt.Title)
                 case web.EventType.SOURCE_DOWNLOAD.getCode  
                     matlab.desktop.editor.newDocument(evnt.SourceText.char);
             end
 
-            if this.debug_
+            if this.showDebug_
                 if isempty(browser); browser = this.focusedBrowser_; end
                 this.printDebugMessage(browser,evnt);
             end
@@ -622,6 +602,7 @@ classdef Browser < handle
                 try imtool(I); catch; imshow(I); end
             end
         end
+      
     end
 
     methods(Access = protected, Static = true)
@@ -642,22 +623,25 @@ classdef Browser < handle
                 end
                 URI = java.net.URI(URL.toString);
                 domain = URI.getHost();
+                %if domain.startsWith('www.')
+                    %domain = domain.substring(4);
+                %end
             catch
             end
         end
 
-        function  icon = fetchFavicon( map, domain, generic )
+        function  icon = fetchFavicon( map, domain )
             
-            icon = generic;
+            icon = Browser.GENERIC_ICON;
             if isempty(domain); return; end
             if map.containsKey(domain)
 
                 icon = map.get(domain);
             else                
-                strQuery = java.lang.StringBuilder('https://www.google.com/s2/favicons?domain=');
+                strQuery = java.lang.StringBuilder(...
+                    'https://www.google.com/s2/favicons?domain=');
                 strQuery.append(domain);
                 strQuery.append('&sz=16');
-
                 try
                     URL = java.net.URL(strQuery.toString);
                     image = java.awt.Toolkit.getDefaultToolkit().createImage(URL.getContent);
@@ -667,7 +651,7 @@ classdef Browser < handle
                 end
             end
         end
-
+        
         function cefClient = getClient()
 
             cefClient = org.cef.CefApp.getInstance().createClient();
@@ -707,7 +691,7 @@ classdef Browser < handle
             try
                 msg = [msg,'<center><h1 style="text-align:center">',errorCode.toString.char,'</h1></center>'];
             catch
-                msg = [msg,'<center><h1 style="text-align:center">UNKOWN_ERROR</h1></center>'];
+                msg = [msg,'<h1 style="text-align:center">UNKOWN_ERROR</h1>'];
             end
             msg = [msg,'<hr><center>ucdn/1.22.1</center>'];
             msg = [msg,'<h4>Failed to load : <br>', char(failedUrl),'</h4>'];
@@ -761,17 +745,21 @@ classdef Browser < handle
             end
         end
 
-        function [ URL, type ] = validateURL( URL )            
+        function [ URL, type ] = validateURL( URL )              
 
-            if isempty(URL); URL = 'https://www.google.com/'; end
+            if isempty(URL)
+                URL = Browser.DEFAULT_URL;
+                type = 'WEB';
+                return
+            end   
 
-            if startsWith(URL,'data'); type = 'DATA'; return; end           
+            if startsWith(URL,'data'); type = 'DATA'; return; end 
 
             try
                 URL = com.mathworks.html.Url.parse(URL);               
                 type = URL.getType.toString.char;  
                 URL = URL.toString.char;
-            catch ME
+            catch 
                 URL = ['google.com/search?q=',URL];
                 try
                     URL = com.mathworks.html.Url.parse(URL);
@@ -801,7 +789,7 @@ classdef Browser < handle
             if isa(URL,'com.mathworks.html.Url')
                 URL = java.net.URL(URL.toString);
             else
-                URL = com.mathworks.html.Url.parseSilently(URL);
+                URL = com.mathworks.html.Url.parseSilently(URL); %#ok<*JAPIMATHWORKS> 
                 if isempty(URL); return; end
                 URL = java.net.URL(URL.toString);
             end
@@ -812,7 +800,7 @@ classdef Browser < handle
                 image = java.awt.Toolkit.getDefaultToolkit().createImage(URL.getContent);
                 icon = javax.swing.ImageIcon(image);
             catch
-                icon = com.mathworks.common.icons.IconEnumerationUtils.getIcon('web_globe.png');
+                Browser.GENERIC_ICON;
             end
         end        
 

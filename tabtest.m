@@ -23,12 +23,11 @@ function b = tabtest( dodebug )
     addTabBut.ActionPerformedCallback = @(s,e) addNewTab(s,e);
 
     tabPane.setTabTrailingComponent(addTabBut);
+    tabPane.insertTab(b.Title,b.Favicon,b.install,'',0);
 
     f = figure();
     b.createJavaWrapperPanel(f,tabPane,[0,0,1,1]); 
     drawnow()
-
-    tabPane.insertTab(b.Title,b.Favicon,b.install,'',0);
 
     function addNewTab( src, evnt )
         index = tabPane.getTabCount;
@@ -69,9 +68,9 @@ function tabPane = creatabbedPane()
     tabPane.setShowTabButtons(false);
     tabPane.setHideOneTab(false);
     tabPane.setLayoutTrailingComponentBeforeButtons(true);
-%     tabPane.setTabShape(com.jidesoft.swing.JideTabbedPane.SHAPE_ROUNDED_FLAT)
+    tabPane.setTabShape(com.jidesoft.swing.JideTabbedPane.SHAPE_ROUNDED_FLAT)
 %     tabPane.setColorTheme(com.jidesoft.swing.JideTabbedPane.COLOR_THEME_OFFICE2003);
     tabPane.setTabInsets(java.awt.Insets(4,4,4,4));
     tabPane.setTabResizeMode(com.jidesoft.swing.JideTabbedPane.RESIZE_MODE_DEFAULT);
-
+    tabPane.setTabColorProvider(web.ui.TabColorProvider(tabPane));
 end
