@@ -1,23 +1,50 @@
 classdef Browser < handle
+    % Browser - an implementation of JCEF for matlab
+    %  https://bitbucket.org/chromiumembedded/java-cef/src/master/
 
     properties(Access = public, Dependent = true, SetObservable, AbortSet)
-
+        % URL: Current location. Character vector.
         URL
+        % Title: Current web page title. Character array.
         Title
+        % Favicon: Favicon of current webpage, the defualt (globe) icon if
+        % favicon is not retrivable or null. javax.swing.ImageIcon.
         Favicon
+        % IsLoading: Flag indicating if the web page is loading (true) or
+        % has completed loading (false). boolean.
         IsLoading
+        % CanGoBack: Flag indicating if the focused browser can go back.
+        % boolean.
         CanGoBack
+        % CanGoForward: Flag indicating if focused browser can go forward.
+        % boolean.
         CanGoForward
+        % ErrorCode: Last error code encountered. Character array.
         ErrorCode
+        % StatusMessage: Last status message, typicaly the text of the last
+        % hypertext that was moused over. Character array
         StatusMessage        
     end
 
     properties(Access = public, Dependent = true)
-
+        % BrowserID: Focused browsers identifier. Scalar, double.
         BrowserID
+        % RetriveFavicon: Flag idicating if a site's favicon is retrieved.
+        % boolean.
         RetriveFavicon
+        % EnableContextMenu: Flag indicating if a context menu is shown on 
+        % right click. Context menu is content aware, if content is an
+        % image that can be opened in matlab, the option to open
+        % image (without downloading) in imtool/imshow is presented,
+        % otherwise, the option to download image to file is presented.
+        % An option to view page source code in a Matlab Editor is
+        % provided (saving the Editor instance as an httml file will enable
+        % viewing the source code with proper syntax). boolean. 
         EnableContextMenu
+        % Flag idicating of an address panel is shown above browser
         EnableAddressPane
+        % Flag idicating if debug messages are printed to the command
+        % window
         ShowDebug
     end
 
@@ -276,7 +303,8 @@ classdef Browser < handle
         end
 
         function showDevTools( this, browser ) %#ok<INUSD> 
-
+            % CefApp is set up by Matlab, debug port needs to be something
+            % other than zero for devtools to work
         end
 
         function icon = getGenericIcon( this )
