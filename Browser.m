@@ -148,26 +148,6 @@ classdef Browser < handle
 
     methods(Access = public)
 
-        function parseInputs( this, args )
-
-            parser = inputParser();
-
-            addParameter(parser,'Position',this.DEFAULT_POSITION );
-            addParameter(parser,'RetriveFavicon', false);
-            addParameter(parser,'EnableContextMenu', false);
-            addParameter(parser,'EnableAddressPane', false);
-            addParameter(parser,'ShowDebug', false);
-
-            parse(parser,args{:});
-            
-            this.position_ = parser.Results.Position;
-            this.retrieveFavicon_ = parser.Results.RetriveFavicon;
-            this.isContextMenuEnabled_ = parser.Results.EnableContextMenu;
-            this.enableAddressPane_ = parser.Results.EnableAddressPane;
-            this.showDebug_ = parser.Results.ShowDebug;
-
-        end
-
         function varargout = install( this, hparent, position )
             % install browser panel in a hg parent            
 
@@ -252,6 +232,8 @@ classdef Browser < handle
 
             loadDirectly = false;
 
+            strContent = convertStringsToChars(strContent);
+
             if isfile(strContent)
                 cellstr = readlines(strContent,'EmptyLineRule','skip','WhitespaceRule','trim');
                 strContent = char(join(cellstr));
@@ -294,6 +276,8 @@ classdef Browser < handle
 
         function executeJavaScript( this, code, url, lineno )
             narginchk(2,4)
+
+            code = convertStringsToChars(code);
             
             if isfile(code)
                 cellstr = readlines(code,'EmptyLineRule','skip','WhitespaceRule','trim');
@@ -446,6 +430,26 @@ classdef Browser < handle
 
     methods(Access = protected)
 
+          function parseInputs( this, args )
+
+            parser = inputParser();
+
+            addParameter(parser,'Position',this.DEFAULT_POSITION );
+            addParameter(parser,'RetriveFavicon', false);
+            addParameter(parser,'EnableContextMenu', false);
+            addParameter(parser,'EnableAddressPane', false);
+            addParameter(parser,'ShowDebug', false);
+
+            parse(parser,args{:});
+            
+            this.position_ = parser.Results.Position;
+            this.retrieveFavicon_ = parser.Results.RetriveFavicon;
+            this.isContextMenuEnabled_ = parser.Results.EnableContextMenu;
+            this.enableAddressPane_ = parser.Results.EnableAddressPane;
+            this.showDebug_ = parser.Results.ShowDebug;
+
+        end
+
         function initialize( this)
 
             this.configureClient(); 
@@ -474,9 +478,6 @@ classdef Browser < handle
             clients = this.getClients();
             try clients.remove(this.client_); catch; end
         end
-    end
-
-    methods(Access = protected)
 
         function installClientListeners( this )
 
@@ -803,6 +804,14 @@ classdef Browser < handle
             fprintf(msg)
             warning('on')
         end
+    end
+
+    methods(Access = public, Static = true)
+
+        function browser = getCanvasBrowser( hparent )
+            browser = Browser(Browser.BLANK_URL,hparent,'EnableContextMenu',false);
+        end
+
     end
 
     methods(Access = public, Static = true, Hidden = true)

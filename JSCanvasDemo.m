@@ -84,7 +84,7 @@ function JSCanvasDemo()
         jscode = jscode + "ctx.strokeText('" + y + "',10,60);";
         jscode = jscode + "ctx.strokeText('" + wid + "',10,90);";
         jscode = jscode + "ctx.strokeText('" + hgt + "',10,120);";
-        browserMousePos.executeJavaScript(char(jscode),[],0); 
+        browserMousePos.executeJavaScript(jscode,[],0); 
     end
 end
 
@@ -96,15 +96,19 @@ function html = getCanvasHTML( id, wid, hgt )
     html = html + "window.addEventListener('resize', resizeCanvas, false);";
     html = html + "function resizeCanvas(e) {var canvas = document.getElementById(" + id + "); canvas.width = document.documentElement.clientWidth; canvas.height = document.documentElement.clientHeight; drawScreen();}</script>";
     html = html + "</body></html>";
-    html = char(html);
 end
 
 function html = getPlotlyHTML( id )
-    html = "<!DOCTYPE HTML><html>";
-    html = html + "<head><style>body{width: 100%; height: 140px; margin: 0px; overflow: hidden;}</style><script src='https://cdn.plot.ly/plotly-2.18.0.min.js'></script></head><body>";
-    html = html + "<div id=" + id + " style=width:100%;height:140px;></div>";
-    html = html + "</body></html>";   
-    html = char(html);
+    html = "<!DOCTYPE HTML>";
+    html = html + "<html>";
+    html = html +   "<head>";
+    html = html +       "<style>body{width: 100%; height: 140px; margin: 0px; overflow: hidden;}</style>";
+    html = html +       "<script src='https://cdn.plot.ly/plotly-2.18.0.min.js'></script>";
+    html = html +   "</head>";
+    html = html +   "<body>";
+    html = html +       "<div id=" + id + " style=width:100%;height:140px;></div>";
+    html = html +   "</body>";
+    html = html + "</html>";   
 end
 
 function jscode = getAnimatedClockJSCode(id)
