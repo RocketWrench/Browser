@@ -8,7 +8,7 @@ const ball = {
   y: 100,
   vx: 5,
   vy: 1,
-  radius: 25,
+  radius: 12,
   color: "blue",
   draw() {
     ctx.beginPath();
