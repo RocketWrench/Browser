@@ -49,10 +49,10 @@ function testjs
         'InteractionsAllowed','translate');
     addlistener(roi,'ROIMoved',@onROIMoved);
 
-    browserMousePos = Browser(Browser.BLANK_URL,topPanel);
-    browserClock = Browser(Browser.BLANK_URL,cornerPanel);
-    browserDetail = Browser(Browser.BLANK_URL,middlePanel);
-    browserBall = Browser(Browser.BLANK_URL,rightPanel);
+    browserMousePos = Browser(Browser.BLANK_URL,topPanel,'EnableContextMenu',false);
+    browserClock = Browser(Browser.BLANK_URL,cornerPanel,'EnableContextMenu',false);
+    browserDetail = Browser(Browser.BLANK_URL,middlePanel,'EnableContextMenu',false);
+    browserBall = Browser(Browser.BLANK_URL,rightPanel,'EnableContextMenu',false);
 
     browserMousePos.loadString(getCanvasHTML(mousePosCanvasID,300,dimA));
     browserClock.loadString(getCanvasHTML(clockCanvasID,dimA,dimA)); 
@@ -62,20 +62,9 @@ function testjs
     drawnow();
     pause(0.5)
 
-    fig.WindowButtonMotionFcn = @(s,e) onMouseMove(s,e);
-
-    browserClock.executeJavaScript(getAnimatedClockJSCode(clockCanvasID),[],0)
-    browserBall.executeJavaScript('ball.js',[],0)
-    onROIMoved(roi,[]);
- 
-    function onMouseMove( src, evnt )
-%         ax = src.CurrentAxes;
-%         cp = ax.CurrentPoint;
-%         x = sprintf('x: %2.2f',cp(1,1));
-%         y = sprintf('y: %2.2f',cp(1,2));
-%         jscode = sprintf('var c = document.getElementById("%s");ctx = c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);ctx.font = "30px Arial";ctx.strokeText("%s",10,30);ctx.strokeText("%s",10,60)',mousePosCanvasID,x,y);
-%         browserMousePos.executeJavaScript(jscode,[],0);     
-    end
+    browserClock.executeJavaScript(getAnimatedClockJSCode(clockCanvasID))
+    browserBall.executeJavaScript('ball.js')
+    onROIMoved(roi,[]); 
 
     function onROIMoved( src, evnt )
     

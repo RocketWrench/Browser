@@ -49,6 +49,8 @@ classdef Browser < handle
     end
 
     properties(Access = protected)
+        
+        position_(1,4) double = Browser.DEFAULT_POSITION;
 
         client_;        
 
@@ -76,6 +78,7 @@ classdef Browser < handle
         browserPanelListeners_;
         displayListener_;
         loadListener_;
+        contextMenuListener_;
     end
 
     properties(Access = protected)
@@ -116,20 +119,18 @@ classdef Browser < handle
 
     methods
 
-        function this = Browser( URL, parent, position )
-
-            narginchk(0,4)                      
+        function this = Browser( URL, parent, varargin )                     
 
             if nargin
                 this.url_ = this.validateURL(URL);
                 this.initialize();
+                
+                if nargin > 2
+                    this.parseInputs(varargin);
+                end
 
                 if nargin > 1
-                    pos = this.DEFAULT_POSITION;
-                    if nargin > 2
-                        pos = position;
-                    end
-                    this.install(parent,pos);
+                    this.install(parent,this.position_);
                 end                
             end           
         end
@@ -140,11 +141,32 @@ classdef Browser < handle
             try delete(this.handleListeners_); catch; end
             try delete(this.loadListener_); catch; end
             try delete(this.displayListener_); catch; end
+            try delete(this.contextMenuListener_); catch; end
             try this.client_.dispose(); catch; end          
         end
     end
 
     methods(Access = public)
+
+        function parseInputs( this, args )
+
+            parser = inputParser();
+
+            addParameter(parser,'Position',this.DEFAULT_POSITION );
+            addParameter(parser,'RetriveFavicon', false);
+            addParameter(parser,'EnableContextMenu', false);
+            addParameter(parser,'EnableAddressPane', false);
+            addParameter(parser,'ShowDebug', false);
+
+            parse(parser,args{:});
+            
+            this.position_ = parser.Results.Position;
+            this.retrieveFavicon_ = parser.Results.RetriveFavicon;
+            this.isContextMenuEnabled_ = parser.Results.EnableContextMenu;
+            this.enableAddressPane_ = parser.Results.EnableAddressPane;
+            this.showDebug_ = parser.Results.ShowDebug;
+
+        end
 
         function varargout = install( this, hparent, position )
             % install browser panel in a hg parent            
@@ -165,15 +187,13 @@ classdef Browser < handle
                 assert(isvalid(hparent),'webBrowser:InvalidParent',...
                     'hparent must be a valid graphics handle')
 
-                if nargin < 3
-                    pos = this.DEFAULT_POSITION;
-                else
-                    pos = position;
+                if nargin == 3
+                    this.position_ = position;
                 end   
 
                 drawnow();
                 
-                container = this.createJavaWrapperPanel(hparent,browserPanel,pos);
+                container = this.createJavaWrapperPanel(hparent,browserPanel,this.position_);
                 drawnow()
 
                 this.installHandleListener(hparent,browser);
@@ -232,10 +252,16 @@ classdef Browser < handle
 
             loadDirectly = false;
 
+            if isfile(strContent)
+                cellstr = readlines(strContent,'EmptyLineRule','skip','WhitespaceRule','trim');
+                strContent = char(join(cellstr));
+            end            
+
             switch nargin
                 case 2
                     browser = this.focusedBrowser_;
-                    if numel(strContent) > 5
+
+                    if startsWith(strContent,'data','IgnoreCase',true)
                         loadDirectly = strcmp(strContent(1:5),'data:');
                     end
                     mimeType = 'text/html';                    
@@ -267,7 +293,20 @@ classdef Browser < handle
         end
 
         function executeJavaScript( this, code, url, lineno )
+            narginchk(2,4)
+            
+            if isfile(code)
+                cellstr = readlines(code,'EmptyLineRule','skip','WhitespaceRule','trim');
+                code = char(join(cellstr));
+            end 
 
+            switch nargin
+                case 2
+                    url = this.url_;
+                    lineno = 0;
+                case 3
+                    lineno = 0;
+            end
             this.focusedBrowser_.executeJavaScript(code,url,lineno);
         end
 
@@ -455,18 +494,21 @@ classdef Browser < handle
             
             downloadHandler = web.DownloadHandler();
             this.client_.addDownloadHandler(downloadHandler);
-
-            contextMenuHandler = web.ContextMenuHandler();
-            this.client_.removeContextMenuHandler();
-            this.client_.addContextMenuHandler(contextMenuHandler);         
-
+            
+            if this.isContextMenuEnabled_
+                contextMenuHandler = web.ContextMenuHandler();
+                this.client_.removeContextMenuHandler();
+                this.client_.addContextMenuHandler(contextMenuHandler); 
+                this.contextMenuListener_ = addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction); 
+            else
+                this.client_.removeContextMenuHandler();
+            end
             this.clientListeners_ = [...
                 addlistener(displayHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(loadHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(lifeSpanHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(jsDialogHandler.getCallback,'delayed',@this.onClientAction);...
-                addlistener(downloadHandler.getCallback,'delayed',@this.onClientAction);...
-                addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction)];           
+                addlistener(downloadHandler.getCallback,'delayed',@this.onClientAction)];           
         end
 
         function setContextMenuHandler( this )
