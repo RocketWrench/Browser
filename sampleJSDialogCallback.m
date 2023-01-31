@@ -1,7 +1,7 @@
-function jsDialogCallback( type, URL, message, prompt, callback )
+function sampleJSDialogCallback( type, URL, message, prompt, callback )
 
     switch type
-        case 'JSDIALOGTYPE_CONFORM'
+        case 'JSDIALOGTYPE_CONFIRM'
     
         case 'JSDIALOGTYPE_PROMPT'
             prompt = {prompt};
