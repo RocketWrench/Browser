@@ -390,10 +390,7 @@ classdef Browser < handle
 
         function set.EnableContextMenu( this, val )
             val = logical(val);
-            if ~(this.isContextMenuEnabled_ & val) %#ok<AND2> 
-                this.isContextMenuEnabled_ = val;
-                this.setContextMenuHandler();
-            end
+            this.setContextMenuHandler();
         end
 
         function val = get.EnableAddressPane( this )
@@ -495,15 +492,9 @@ classdef Browser < handle
             
             downloadHandler = web.DownloadHandler();
             this.client_.addDownloadHandler(downloadHandler);
-            
-            if this.isContextMenuEnabled_
-                contextMenuHandler = web.ContextMenuHandler();
-                this.client_.removeContextMenuHandler();
-                this.client_.addContextMenuHandler(contextMenuHandler); 
-                this.contextMenuListener_ = addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction); 
-            else
-                this.client_.removeContextMenuHandler();
-            end
+
+            this.setContextMenuHandler();
+
             this.clientListeners_ = [...
                 addlistener(displayHandler.getCallback,'delayed',@this.onClientAction);...
                 addlistener(loadHandler.getCallback,'delayed',@this.onClientAction);...
@@ -514,10 +505,10 @@ classdef Browser < handle
 
         function setContextMenuHandler( this )
 
-            if this.isContextMenuEnabled_
-                contextMenuHandler = web.ContextMenuHandler();                
-                this.client_.addContextMenuHandler(contextMenuHandler);
-            end
+            contextMenuHandler = web.ContextMenuHandler(this.isContextMenuEnabled_);
+            this.client_.removeContextMenuHandler();
+            this.client_.addContextMenuHandler(contextMenuHandler); 
+            this.contextMenuListener_ = addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction); 
         end        
 
         function installHandleListener( this, handle, browser )

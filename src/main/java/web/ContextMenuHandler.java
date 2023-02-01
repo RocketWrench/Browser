@@ -16,9 +16,10 @@ public class ContextMenuHandler implements CefContextMenuHandler {
 
     private final Callback source_callback = new Callback();
     private final PageVisitor visitor = new PageVisitor(this.source_callback);
+    private final boolean is_enabled_;
     
-    public ContextMenuHandler() {
-
+    public ContextMenuHandler( boolean isenabled) {
+        this.is_enabled_ = isenabled;
     }
 
     @Override
@@ -27,29 +28,26 @@ public class ContextMenuHandler implements CefContextMenuHandler {
                                     CefContextMenuParams params,
                                     CefMenuModel model) {
         model.clear();
-
-        // Navigation menu
-        model.addItem(MenuId.MENU_ID_BACK, "Back");
-        model.setEnabled(MenuId.MENU_ID_BACK, browser.canGoBack());
-
-        model.addItem(MenuId.MENU_ID_FORWARD, "Forward");
-        model.setEnabled(MenuId.MENU_ID_FORWARD, browser.canGoForward());
-
-        model.addSeparator();
-        model.addItem(MenuId.MENU_ID_FIND, "Find...");
         
-        String URL = params.getSourceUrl();  
-        if (params.hasImageContents() && URL != null){
-            String displayStr = (URL.contains("webp"))?"Download image...":"Open image in imtool...";
-            model.addItem(MenuId.MENU_ID_USER_FIRST,displayStr );
+        if (this.is_enabled_){
+
+            // Navigation menu
+            model.addItem(MenuId.MENU_ID_BACK, "Back");
+            model.setEnabled(MenuId.MENU_ID_BACK, browser.canGoBack());
+
+            model.addItem(MenuId.MENU_ID_FORWARD, "Forward");
+            model.setEnabled(MenuId.MENU_ID_FORWARD, browser.canGoForward());
+
+            model.addSeparator();
+            model.addItem(MenuId.MENU_ID_FIND, "Find...");
+        
+            String URL = params.getSourceUrl();  
+            if (params.hasImageContents() && URL != null){
+                String displayStr = (URL.contains("webp"))?"Download image...":"Open image in imtool...";
+                model.addItem(MenuId.MENU_ID_USER_FIRST,displayStr );
+            }
+            model.addItem(MenuId.MENU_ID_VIEW_SOURCE, "View source in Editor...");
         }
-        model.addItem(MenuId.MENU_ID_VIEW_SOURCE, "View source in Editor...");
-        
-        /*JComponent parent = (JComponent) browser.getUIComponent().getParent();
-        Boolean bool = (Boolean) parent.getClientProperty("SPLIT_PANE_CLIENT");
-        if (bool){
-            model.addItem(MenuId.MENU_ID_USER_LAST,"Inspect...");
-        }*/
     }
 
     @Override

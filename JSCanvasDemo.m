@@ -89,13 +89,22 @@ function JSCanvasDemo()
 end
 
 function html = getCanvasHTML( id, wid, hgt )
-    html = "<!DOCTYPE HTML><html>";
-    html = html + "<head><style>body{width: 100%; height: 100%; margin: 0px; overflow: hidden}</style></head><body>";
-    html = html + "<canvas id=" +id + " style = position : relative; style = display : block; width= " + wid + " height= " + hgt + "></canvas>";
-    html = html + "<script type='text/javascript'> ";
-    html = html + "window.addEventListener('resize', resizeCanvas, false);";
-    html = html + "function resizeCanvas(e) {var canvas = document.getElementById(" + id + "); canvas.width = document.documentElement.clientWidth; canvas.height = document.documentElement.clientHeight; drawScreen();}</script>";
-    html = html + "</body></html>";
+    html = "<!DOCTYPE HTML>";
+    html = html + "<html>";
+    html = html +  "<head>";
+    html = html +       "<style>:body{width: 100%; height: 100%; margin: 0px; overflow: hidden; display: block}</style>";
+    html = html +   "</head>";
+    html = html +   "<body>";
+    html = html +       "<canvas id='" +id + "' width=' " + wid + "'height= '" + hgt + "'style = position: relative; display: block; overflow: hidden;></canvas>";   
+    html = html +       "<script type='text/javascript'> ";
+    html = html +           "window.addEventListener('resize', resizeCanvas, false);";
+    html = html +               "function resizeCanvas(e) {var canvas = document.getElementById('" + id + "');";
+    html = html +                   "canvas.width = document.documentElement.clientWidth;";
+    html = html +                   "canvas.height = document.documentElement.clientHeight;";
+    html = html +                   "drawScreen();}";
+    html = html +       "</script>";
+    html = html +   "</body>'";
+    html = html +  "</html>";
 end
 
 function html = getPlotlyHTML( id )
