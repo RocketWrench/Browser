@@ -15,7 +15,7 @@ function JSCanvasDemo()
         'Name','JavaScript Demo',...
         'ToolBar','none',...
         'MenuBar','none',...
-        'NumberTitle','off');
+        'NumberTitle','off');    
 
     container = Browser.createFlowContainer(fig,'topdown');
     container.Margin = 1;
@@ -38,9 +38,6 @@ function JSCanvasDemo()
     ax.Units = 'normalized';
     ax.Position = [0,0,1,1];
     ax.Toolbar = [];
-    ax.XAxis.Visible = 'off';
-    ax.YAxis.Visible = 'off';
-
     set(ax,'LooseInset',get(ax,'TightInset')) 
 
     roi = images.roi.Rectangle(...
@@ -55,73 +52,102 @@ function JSCanvasDemo()
     browserDetail = Browser.getCanvasBrowser(middlePanel); 
     browserBall = Browser.getCanvasBrowser(rightPanel); 
 
-    browserMousePos.loadString(getCanvasHTML(mousePosCanvasID,300,dimA));
-    browserClock.loadString(getCanvasHTML(clockCanvasID,dimA,dimA)); 
-    browserDetail.loadString(getPlotlyHTML(detailCanvasID));
-    browserBall.loadString(getCanvasHTML(ballCanvasID,dimA,300));
+    browserMousePos.loadString(getHTML(mousePosCanvasID));
+    browserClock.loadString(getHTML(clockCanvasID)); 
+    browserDetail.loadString(getHTML(detailCanvasID, true, dimA));
+    browserBall.loadString(getHTML(ballCanvasID));
+
+    fig.UserData = struct(...
+        'browserMousePos',browserMousePos,...
+        'mousePosCanvasID',mousePosCanvasID,...
+        'browserDetail',browserDetail,...
+        'detailCanvasID',detailCanvasID,...
+        'Image',I);
+    fig.DeleteFcn = {@(s,e,b)onFigureClose(s,e,b), [browserMousePos,browserClock,browserDetail]};
 
     drawnow();
     pause(0.5)
 
     browserClock.executeJavaScript(getAnimatedClockJSCode(clockCanvasID))
     browserBall.executeJavaScript('ball.js')
-    onROIMoved(roi,[]); 
 
-    function onROIMoved( src, ~ )
-    
-        mask = createMask(roi);
-        data = I(mask);
-        x = sprintf('x: %2.1f',src.Position(1));
-        y = sprintf('y: %2.1f',src.Position(2)); 
-        wid = sprintf('width: %2.1f',sum(src.Position(1,[1,3])));
-        hgt = sprintf('hieght: %2.1f',sum(src.Position(1,[2,4]))); 
-        browserDetail.executeJavaScript(histogramJS(detailCanvasID,data),[],0);  
-        jscode = "var c = document.getElementById('" + mousePosCanvasID + "');";
-        jscode = jscode + "ctx = c.getContext('2d');";
-        jscode = jscode + "ctx.clearRect(0,0,c.width,c.height);";
-        jscode = jscode + "ctx.font = '30px Arial';";
-        jscode = jscode + "ctx.strokeText('" + x + "',10,30);";
-        jscode = jscode + "ctx.strokeText('" + y + "',10,60);";
-        jscode = jscode + "ctx.strokeText('" + wid + "',10,90);";
-        jscode = jscode + "ctx.strokeText('" + hgt + "',10,120);";
-        browserMousePos.executeJavaScript(jscode,[],0); 
-    end
+    onROIMoved(roi,[]); 
 end
 
-function html = getCanvasHTML( id, wid, hgt )
+function onFigureClose( src , ~ , browsers )
+    src.UserData = [];
+    delete(browsers);
+end
+
+function onROIMoved( src, ~ )
+
+    fig = ancestor(src,'figure');
+
+    mask = createMask(src);
+    data = fig.UserData.Image(mask);
+
+    x = sprintf('x: %2.1f',src.Position(1));
+    y = sprintf('y: %2.1f',src.Position(2)); 
+    wid = sprintf('width: %2.1f',sum(src.Position(1,[1,3])));
+    hgt = sprintf('hieght: %2.1f',sum(src.Position(1,[2,4]))); 
+     
+    jscode = "var c = document.getElementById('" + fig.UserData.mousePosCanvasID + "');";
+    jscode = jscode + "ctx = c.getContext('2d');";
+    jscode = jscode + "ctx.clearRect(0,0,c.width,c.height);";
+    jscode = jscode + "ctx.font = '30px Arial';";
+    jscode = jscode + "ctx.strokeText('" + x   + "',10,30,c.width-60);";
+    jscode = jscode + "ctx.strokeText('" + y   + "',10,60,c.width-60);";
+    jscode = jscode + "ctx.strokeText('" + wid + "',10,90,c.width-60);";
+    jscode = jscode + "ctx.strokeText('" + hgt + "',10,120,c.width-60);";
+    
+    
+    fig.UserData.browserDetail.executeJavaScript(histogramJS(fig.UserData.detailCanvasID,data),[],0); 
+    fig.UserData.browserMousePos.executeJavaScript(jscode,[],0); 
+end
+
+function html = getHTML( id, isPlotly, hgt )
+    if nargin < 2; isPlotly = false; end
     html = "<!DOCTYPE HTML>";
     html = html + "<html>";
-    html = html +  "<head>";
-    html = html +       "<style>:body{width: 100%; height: 100%; margin: 0px; overflow: hidden; display: block}</style>";
+    html = html +   "<head>";
+    html = html +       "<style>";
+    html = html +           "html,";
+    html = html +           "body { ";
+    html = html +               "position: absolute;";
+    html = html +               "top: 0px;";
+    html = html +               "left: 0px;";
+    html = html +               "width: 100%;";
+    html = html +               "height: 100%;";
+    html = html +               "margin: 0px;";
+    html = html +               "overflow: hidden;";
+    html = html +               "display: block}";
+    html = html +       "</style>";
+    if isPlotly
+    html = html +       "<script src='https://cdn.plot.ly/plotly-2.18.0.min.js'></script>";
+    end
     html = html +   "</head>";
     html = html +   "<body>";
-    html = html +       "<canvas id='" +id + "' width=' " + wid + "'height= '" + hgt + "'style = position: relative; display: block; overflow: hidden;></canvas>";   
+    if isPlotly
+    html = html +       "<div id='" + id + "' style=width:100%;height:" + hgt + "px;></div>";
+    else
+    html = html +       "<canvas id='" + id + "'></canvas>";
+    end
     html = html +       "<script type='text/javascript'> ";
     html = html +           "window.addEventListener('resize', resizeCanvas, false);";
     html = html +               "function resizeCanvas(e) {var canvas = document.getElementById('" + id + "');";
     html = html +                   "canvas.width = document.documentElement.clientWidth;";
     html = html +                   "canvas.height = document.documentElement.clientHeight;";
-    html = html +                   "drawScreen();}";
+    html = html +                   "document.body.style.overflow = 'hidden';";
+    if ~isPlotly
+    html = html +                   "drawScreen();";
+    end    
+    html = html +                   "}";
     html = html +       "</script>";
     html = html +   "</body>'";
     html = html +  "</html>";
 end
 
-function html = getPlotlyHTML( id )
-    html = "<!DOCTYPE HTML>";
-    html = html + "<html>";
-    html = html +   "<head>";
-    html = html +       "<style>body{width: 100%; height: 140px; margin: 0px; overflow: hidden;}</style>";
-    html = html +       "<script src='https://cdn.plot.ly/plotly-2.18.0.min.js'></script>";
-    html = html +   "</head>";
-    html = html +   "<body>";
-    html = html +       "<div id=" + id + " style=width:100%;height:140px;></div>";
-    html = html +   "</body>";
-    html = html + "</html>";   
-end
-
 function jscode = getAnimatedClockJSCode(id)
-
 % from https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Tutorial/Basic_animations
      jscode =  ['function clock() {',...
       'const now = new Date();'...
