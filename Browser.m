@@ -55,11 +55,9 @@ classdef Browser < handle
         client_;        
 
         browsers_ = java.util.HashMap;
-        freeBrowserIDs(:,1) int32;
+
         focusedBrowserID_(1,1) int32 = -1;
         focusedBrowser_;
-
-        devTools_;
 
         url_(1,:) char = Browser.DEFAULT_URL;
 
@@ -76,9 +74,9 @@ classdef Browser < handle
         clientListeners_;
         handleListeners_;
         browserPanelListeners_;
-        displayListener_;
-        loadListener_;
-        contextMenuListener_;
+        displayHandlerListener_;
+        loadHandlerListener_;
+        contextMenuHandlerListener_;
     end
 
     properties(Access = protected)
@@ -139,9 +137,9 @@ classdef Browser < handle
 
             try delete(this.clientListeners_); catch; end
             try delete(this.handleListeners_); catch; end
-            try delete(this.loadListener_); catch; end
-            try delete(this.displayListener_); catch; end
-            try delete(this.contextMenuListener_); catch; end
+            try delete(this.loadHandlerListener_); catch; end
+            try delete(this.displayHandlerListener_); catch; end
+            try delete(this.contextMenuHandlerListener_); catch; end
             try this.client_.dispose(); catch; end          
         end
     end
@@ -154,17 +152,19 @@ classdef Browser < handle
             narginchk(1,3)
             nargoutchk(0,3);             
             
-            browser = this.focusedBrowser_;
+            cefBrowser = this.getFocusedBrowser();
             
-            browserPanel = handle(javaObjectEDT('web.ui.BrowserPanel',browser,this.enableAddressPane_),'CallbackProperties');
+            browserPanel = handle(javaObjectEDT('web.ui.BrowserPanel',cefBrowser,this.enableAddressPane_),'CallbackProperties');
             
-            this.loadListener_ = addlistener(browserPanel.getLoadHandlerCallback,'delayed',@this.onClientAction);
-            this.displayListener_ = addlistener(browserPanel.getDisplayHandlerCallback,'delayed',@this.onClientAction);
+            this.loadHandlerListener_ = addlistener(browserPanel.getLoadHandlerCallback,'delayed',@this.onClientAction);
+            this.displayHandlerListener_ = addlistener(browserPanel.getDisplayHandlerCallback,'delayed',@this.onClientAction);
 
             container = [];                         
 
             if nargin > 1
-                assert(isvalid(hparent),'webBrowser:InvalidParent',...
+                
+                assert(~isempty(hparent) & isvalid(hparent),...
+                    'webBrowser:InvalidParent',...
                     'hparent must be a valid graphics handle')
 
                 if nargin == 3
@@ -176,7 +176,7 @@ classdef Browser < handle
                 container = this.createJavaWrapperPanel(hparent,browserPanel,this.position_);
                 drawnow()
 
-                this.installHandleListener(hparent,browser);
+                this.installHandleListener(hparent,cefBrowser);
             end           
 
             if nargout
@@ -193,16 +193,15 @@ classdef Browser < handle
             end
         end
 
-        function addNew( this, URL )
+        function cefBrowser = new( this, URL )
 
             if nargin > 1
                 this.url_ = this.validateURL(URL);
             end
             osr = this.useOSR_ | this.overrideOSR_;
-            this.focusedBrowser_ = this.getBrowser(this.client_,this.url_,...
-                osr,this.isTransparent_);
+            this.focusedBrowser_ = this.getNewBrowser();
             this.focusedBrowserID_ = this.focusedBrowser_.getIdentifier();
-            drawnow();
+            cefBrowser = this.focusedBrowser_;
         end
 
         function load( this, URL)
@@ -230,7 +229,7 @@ classdef Browser < handle
 
             narginchk(2,4)
 
-            loadDirectly = false;
+            isDataURI = false;
 
             strContent = convertStringsToChars(strContent);
 
@@ -244,17 +243,17 @@ classdef Browser < handle
                     browser = this.focusedBrowser_;
 
                     if startsWith(strContent,'data','IgnoreCase',true)
-                        loadDirectly = strcmp(strContent(1:5),'data:');
+                        isDataURI = strcmp(strContent(1:5),'data:');
                     end
                     mimeType = 'text/html';                    
                 case 3
-                    loadDirectly = isempty(mimeType);
+                    isDataURI = isempty(mimeType);
                     browser = this.focusedBrowser_;
                 case 4
-                    loadDirectly = isempty(mimeType);
+                    isDataURI = isempty(mimeType);
             end
             browser.stopLoad();
-            if loadDirectly
+            if isDataURI
                 browser.loadURL(strContent);
             else
                 browser.loadURL(this.createDataURI(mimeType,char(strContent)));
@@ -265,12 +264,13 @@ classdef Browser < handle
 
         function alert( this, msg )
             
-            code = ['alert(''',msg,''');'];
+            code = "alert('" + msg + "');";
             this.executeJavaScript(code,this.url_,1);
         end
 
         function prompt( this, promptstr, defaultval )
-            code = ['var value = prompt(''',promptstr,''', ''',defaultval,''');'];
+
+            code = "'var value = prompt('" + promptstr   + "', '" + defaultval + "');";
             this.executeJavaScript(code,this.url_,1);
         end
 
@@ -422,6 +422,9 @@ classdef Browser < handle
 
         function browser = getFocusedBrowser( this )
             browser = this.focusedBrowser_;
+            if isempty(browser)
+                browser = this.new();
+            end
         end
     end
 
@@ -444,7 +447,6 @@ classdef Browser < handle
             this.isContextMenuEnabled_ = parser.Results.EnableContextMenu;
             this.enableAddressPane_ = parser.Results.EnableAddressPane;
             this.showDebug_ = parser.Results.ShowDebug;
-
         end
 
         function initialize( this)
@@ -464,10 +466,12 @@ classdef Browser < handle
         end
         
         function browser = getNewBrowser( this )
-
+            
+            if isempty(this.client_)
+                this.client_ = this.getClient();
+            end
             osr = this.useOSR_ | this.overrideOSR_;
             browser = this.getBrowser(this.client_,this.url_,osr,this.isTransparent_);  
-            %browser.createImmediately();
         end
 
         function removeClient( this )
@@ -508,7 +512,7 @@ classdef Browser < handle
             contextMenuHandler = web.ContextMenuHandler(this.isContextMenuEnabled_);
             this.client_.removeContextMenuHandler();
             this.client_.addContextMenuHandler(contextMenuHandler); 
-            this.contextMenuListener_ = addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction); 
+            this.contextMenuHandlerListener_ = addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction); 
         end        
 
         function installHandleListener( this, handle, browser )
