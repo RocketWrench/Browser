@@ -390,6 +390,7 @@ classdef Browser < handle
 
         function set.EnableContextMenu( this, val )
             val = logical(val);
+            this.isContextMenuEnabled_ = val;
             this.setContextMenuHandler();
         end
 
@@ -482,19 +483,19 @@ classdef Browser < handle
 
         function installClientListeners( this )
 
-            displayHandler = web.DisplayHandler();
+            displayHandler = web.handler.DisplayHandler();
             this.client_.addDisplayHandler(displayHandler);
 
-            loadHandler = web.LoadHandler();
+            loadHandler = web.handler.LoadHandler();
             this.client_.addLoadHandler(loadHandler); 
 
-            lifeSpanHandler = web.LifeSpanHandler();
+            lifeSpanHandler = web.handler.LifeSpanHandler();
             this.client_.addLifeSpanHandler(lifeSpanHandler);
             
-            jsDialogHandler = web.JSDialogHandler();
+            jsDialogHandler = web.handler.JSDialogHandler();
             this.client_.addJSDialogHandler(jsDialogHandler);
             
-            downloadHandler = web.DownloadHandler();
+            downloadHandler = web.handler.DownloadHandler();
             this.client_.addDownloadHandler(downloadHandler);
 
             this.setContextMenuHandler();
@@ -509,7 +510,7 @@ classdef Browser < handle
 
         function setContextMenuHandler( this )
 
-            contextMenuHandler = web.ContextMenuHandler(this.isContextMenuEnabled_);
+            contextMenuHandler = web.handler.ContextMenuHandler(this.isContextMenuEnabled_);
             this.client_.removeContextMenuHandler();
             this.client_.addContextMenuHandler(contextMenuHandler); 
             this.contextMenuHandlerListener_ = addlistener(contextMenuHandler.getCallback,'delayed',@this.onClientAction); 
@@ -558,8 +559,10 @@ classdef Browser < handle
             browser = evnt.Browser;
 
             switch evnt.Type.getCode
-                case web.EventType.LOAD_ERROR.getCode  
+                case web.EventType.LOAD_ERROR.getCode 
+                    % Only care about errors from the main frame;
                     if ~evnt.IsMainFrame; return; end
+
                     if ~isequal(evnt.ErrorCode.getCode,web.ErrorCode.ERR_NONE.getCode) &&...
                        ~isequal(evnt.ErrorCode.getCode,web.ErrorCode.ERR_ABORTED.getCode)
                         this.errorCode_ = evnt.ErrorCode;
